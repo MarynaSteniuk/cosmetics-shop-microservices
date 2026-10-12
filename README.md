@@ -1,0 +1,1 @@
+# cosmetics-shop-microservices
