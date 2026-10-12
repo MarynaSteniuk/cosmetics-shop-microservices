@@ -1,0 +1,246 @@
+{
+  "reviews": [
+    {
+      "_id": {
+        "$oid": "670a0000000000000000f001"
+      },
+      "productId": 1,
+      "productName": "CeraVe Hydrating Cleanser 236 ml",
+      "author": {
+        "customerId": 1,
+        "displayName": "Олена К.",
+        "skinType": "Dry"
+      },
+      "rating": 5,
+      "title": "Ідеальне м'яке очищення",
+      "text": "Шкіра після вмивання не стягнута, добре знімає залишки крему.",
+      "pros": [
+        "не пересушує",
+        "без запаху"
+      ],
+      "photos": [
+        "/uploads/reviews/f001/1.jpg",
+        "/uploads/reviews/f001/2.jpg"
+      ],
+      "verifiedPurchase": {
+        "orderId": 1
+      },
+      "comments": [
+        {
+          "authorName": "Ірина Ш.",
+          "text": "А макіяж знімає?",
+          "createdAt": {
+            "$date": "2026-09-16T10:00:00Z"
+          }
+        },
+        {
+          "authorName": "Олена К.",
+          "text": "Легкий так, водостійкий краще міцеляркою.",
+          "createdAt": {
+            "$date": "2026-09-16T11:20:00Z"
+          }
+        }
+      ],
+      "discussionId": {
+        "$oid": "670a0000000000000000d001"
+      },
+      "helpfulVotes": 12,
+      "createdAt": {
+        "$date": "2026-09-15T08:00:00Z"
+      }
+    },
+    {
+      "_id": {
+        "$oid": "670a0000000000000000f002"
+      },
+      "productId": 3,
+      "productName": "The Ordinary Niacinamide 10% + Zinc 1% 30 ml",
+      "author": {
+        "customerId": 2,
+        "displayName": "Андрій М.",
+        "skinType": "Oily"
+      },
+      "rating": 4,
+      "title": "Помітно менше висипань",
+      "text": "Пори стали менш помітні, але при нанесенні під крем іноді скочується.",
+      "pros": [
+        "менше блиску",
+        "ціна"
+      ],
+      "cons": [
+        "може скочуватися"
+      ],
+      "usageDuration": {
+        "value": 6,
+        "unit": "weeks"
+      },
+      "verifiedPurchase": {
+        "orderId": 2
+      },
+      "helpfulVotes": 7,
+      "createdAt": {
+        "$date": "2026-09-25T17:30:00Z"
+      }
+    },
+    {
+      "_id": {
+        "$oid": "670a0000000000000000f004"
+      },
+      "productId": 2,
+      "productName": "La Roche-Posay Effaclar Duo+ 40 ml",
+      "author": {
+        "customerId": null,
+        "displayName": "Гість",
+        "isGuest": true
+      },
+      "rating": 3,
+      "title": "Працює, але щипає",
+      "text": "Висипань стало менше, проте на подразненій шкірі відчувається печіння.",
+      "cons": [
+        "печіння на подразненнях"
+      ],
+      "discussionId": {
+        "$oid": "670a0000000000000000d002"
+      },
+      "helpfulVotes": 2,
+      "createdAt": {
+        "$date": "2026-09-22T14:00:00Z"
+      }
+    },
+    {
+      "_id": {
+        "$oid": "670a0000000000000000f006"
+      },
+      "productId": 8,
+      "productName": "Avène Cleanance SPF50+ 50 ml",
+      "author": {
+        "customerId": 1,
+        "displayName": "Олена К.",
+        "skinType": "Dry"
+      },
+      "rating": 5,
+      "title": "Не залишає білих слідів",
+      "text": "Матовий фініш, під макіяж лягає добре.",
+      "video": {
+        "url": "/uploads/reviews/f006/review.mp4",
+        "durationSec": 45
+      },
+      "skinConcerns": [
+        "пігментація",
+        "чутливість до сонця"
+      ],
+      "helpfulVotes": 9,
+      "createdAt": {
+        "$date": "2026-10-02T07:50:00Z"
+      }
+    }
+  ],
+  "discussions": [
+    {
+      "_id": {
+        "$oid": "670a0000000000000000d001"
+      },
+      "productId": 1,
+      "productName": "CeraVe Hydrating Cleanser 236 ml",
+      "title": "Чи підходить для чутливої шкіри?",
+      "createdBy": {
+        "customerId": 3,
+        "displayName": "Ірина Ш."
+      },
+      "tags": [
+        "чутлива шкіра",
+        "очищення"
+      ],
+      "messagesCount": 3,
+      "lastMessageAt": {
+        "$date": "2026-09-18T12:30:00Z"
+      },
+      "recentMessages": [
+        {
+          "messageId": {
+            "$oid": "670a0000000000000000e002"
+          },
+          "authorName": "Олена К.",
+          "text": "У мене чутлива суха шкіра, подразнень не було.",
+          "createdAt": {
+            "$date": "2026-09-18T09:10:00Z"
+          }
+        },
+        {
+          "messageId": {
+            "$oid": "670a0000000000000000e003"
+          },
+          "authorName": "Андрій М.",
+          "text": "Підтримую, дуже м'який засіб.",
+          "createdAt": {
+            "$date": "2026-09-18T12:30:00Z"
+          }
+        }
+      ],
+      "createdAt": {
+        "$date": "2026-09-17T18:00:00Z"
+      }
+    }
+  ],
+  "discussion_messages": [
+    {
+      "_id": {
+        "$oid": "670a0000000000000000e001"
+      },
+      "discussionId": {
+        "$oid": "670a0000000000000000d001"
+      },
+      "author": {
+        "customerId": 3,
+        "displayName": "Ірина Ш."
+      },
+      "text": "Маю чутливу шкіру з почервоніннями. Чи не буде печіння?",
+      "createdAt": {
+        "$date": "2026-09-17T18:00:00Z"
+      }
+    },
+    {
+      "_id": {
+        "$oid": "670a0000000000000000e005"
+      },
+      "discussionId": {
+        "$oid": "670a0000000000000000d002"
+      },
+      "author": {
+        "customerId": 1,
+        "displayName": "Олена К."
+      },
+      "text": "Я наношу їх у різні дні, так шкіра не пересушується.",
+      "replyTo": {
+        "$oid": "670a0000000000000000e004"
+      },
+      "attachments": [
+        {
+          "type": "image",
+          "url": "/uploads/discussions/d002/routine.jpg"
+        }
+      ],
+      "createdAt": {
+        "$date": "2026-09-21T08:45:00Z"
+      }
+    }
+  ],
+  "product_ratings": [
+    {
+      "_id": 1,
+      "productName": "CeraVe Hydrating Cleanser 236 ml",
+      "avgRating": 4.5,
+      "reviewsCount": 2,
+      "distribution": {
+        "1": 0,
+        "2": 0,
+        "3": 0,
+        "4": 1,
+        "5": 1
+      },
+      "updatedAt": {
+        "$date": "2026-10-12T17:37:59Z"
+      }
+    }
+  ]
+}
