@@ -121,3 +121,61 @@ curl -k -X POST https://localhost:7206/api/orders/1/status \
 curl -k -X DELETE https://localhost:7206/api/orders/3
 ```
 Помилки повертаються у форматі ProblemDetails: 400 (валідація), 404 (не знайдено), 409 (бізнес-конфлікт).
+
+
+## 3. Лаб. 03. Сервіс каталогу: тришарова архітектура на EF Core
+
+### 3.1. Схема рішення
+```
+Services/Catalog/
+├── Catalog.Api/       контролери, Program.cs, обробка помилок (ProblemDetails), Serilog, Swagger, Dockerfile
+├── Catalog.Bll/       сервіси, DTO, AutoMapper, валідатори FluentValidation, специфікації
+├── Catalog.Dal/       CatalogDbContext, Configurations/, Migrations/, репозиторії, Unit of Work, Seeding/
+└── Catalog.Domain/    сутності з бізнес-правилами, доменні винятки
+```
+Залежності йдуть в один бік: Api → Bll → Dal → Domain.
+
+### 3.2. Що потрібно для запуску
+- .NET 10 SDK і інструмент dotnet-ef (`dotnet tool install --global dotnet-ef`);
+- SQL Server. Рядок підключення: Services/Catalog/Catalog.Api/appsettings.json, ключ ConnectionStrings:CatalogDb.
+
+Схема створюється міграціями в окрему базу CosmeticsCatalogEfDb, тому скрипти db/p2 з Лаб. 01 не потрібні.
+
+### 3.3. Міграції
+З кореня репозиторію:
+```
+dotnet ef migrations add <Назва> --project Services/Catalog/Catalog.Dal --startup-project Services/Catalog/Catalog.Api --output-dir Migrations
+dotnet ef database update --project Services/Catalog/Catalog.Dal --startup-project Services/Catalog/Catalog.Api
+dotnet ef migrations script --project Services/Catalog/Catalog.Dal --startup-project Services/Catalog/Catalog.Api --idempotent --output Services/Catalog/Catalog.Dal/Migrations/InitialCreate.sql
+```
+Початкова міграція InitialCreate і згенерований SQL-скрипт лежать у Services/Catalog/Catalog.Dal/Migrations.
+
+### 3.4. Запуск
+```
+dotnet run --project Services/Catalog/Catalog.Api
+```
+Під час старту застосунок сам застосовує міграції (MigrateAsync) і наповнює базу:
+- бренди й категорії вставляє міграція через HasData з фіксованими Id;
+- товари додає DbInitializer лише для тих SKU, яких ще немає, тому повторний запуск не створює дублікатів;
+- сідінг не виконується в Production або при `Seeding:Enabled = false`.
+
+Swagger: адреса з консолі (`Now listening on ...`) + /swagger.
+
+![Swagger](docs/lab03-swagger.png)
+
+### 3.5. Пагінація, фільтрація, сортування
+GET /api/products приймає: page (від 1), pageSize (за замовчуванням 10, максимум 50), search, brandId, categoryId, skinType, minPrice, maxPrice, inStock, sortBy (name, price, stock, createdAt), sortDir (asc, desc). Фільтри, сортування і Skip/Take виконуються в SQL.
+
+Метадані повертаються в тілі (items, totalCount, page, pageSize, totalPages, hasNext, hasPrevious) і в заголовках X-Total-Count, X-Total-Pages.
+
+![Пагінація](docs/lab03-pagination.png)
+
+### 3.6. Валідація і помилки
+Прості правила — DataAnnotations на DTO, складні — валідатори FluentValidation, які викликаються явно в контролерах. Помилки валідації повертаються як ValidationProblemDetails (400). Інші помилки обробляє GlobalExceptionHandler у форматі ProblemDetails: EntityNotFoundException → 404, ValidationException → 400, ConflictException і DomainException → 409.
+
+![Помилки валідації](docs/lab03-validation-400.png)
+
+### 3.7. Логування
+Serilog налаштовано в Program.cs і в секції Serilog файлу appsettings.json; рівні можна перевизначити змінними оточення (наприклад, `Serilog__MinimumLevel__Default=Warning`). Sink — консоль. Кожен запис містить CorrelationId (заголовок X-Correlation-Id), UserId і RequestPath. Рівень Information для Microsoft.EntityFrameworkCore.Database.Command показує SQL-запити: eager-завантаження товару виконує один запит, explicit-завантаження товарів категорії — два.
+
+![SQL-лог Explicit Loading](docs/lab03-sql-explicit.png)
