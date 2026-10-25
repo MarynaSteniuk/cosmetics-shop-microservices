@@ -179,3 +179,45 @@ GET /api/products приймає: page (від 1), pageSize (за замовчу
 Serilog налаштовано в Program.cs і в секції Serilog файлу appsettings.json; рівні можна перевизначити змінними оточення (наприклад, `Serilog__MinimumLevel__Default=Warning`). Sink — консоль. Кожен запис містить CorrelationId (заголовок X-Correlation-Id), UserId і RequestPath. Рівень Information для Microsoft.EntityFrameworkCore.Database.Command показує SQL-запити: eager-завантаження товару виконує один запит, explicit-завантаження товарів категорії — два.
 
 ![SQL-лог Explicit Loading](docs/lab03-sql-explicit.png)
+
+
+## 4. Лаб. 04. Сервіс відгуків: Clean Architecture, CQRS (MediatR) і MongoDB
+
+### 4.1. Схема шарів
+```
+Services/Reviews/
+├── Reviews.Domain/          сутності (Review, Discussion), value objects (Author, Rating, UsageDuration),
+│                            інтерфейси репозиторіїв, доменні винятки; із зовнішніх пакетів лише MongoDB.Bson
+├── Reviews.Application/     команди й запити MediatR, обробники, валідатори FluentValidation,
+│                            Behaviors (Logging → Validation → Performance), IReviewQueries, AutoMapper
+├── Reviews.Infrastructure/  MongoDbContext, BsonClassMap-мапінг, репозиторії, ReviewQueries,
+│                            створення індексів, сідінг
+└── Reviews.WebApi/          контролери (лише ISender), обробка помилок ProblemDetails, Program.cs, appsettings
+```
+Залежності спрямовані всередину: Application → Domain; Infrastructure → Application, Domain; WebApi → Application, Infrastructure (лише для реєстрації залежностей). Domain не посилається на жоден інший проєкт.
+
+### 4.2. Що потрібно для запуску
+- .NET 10 SDK;
+- MongoDB на localhost:27017 з базою cosmetics_reviews, створеною скриптами db/p3 з Лаб. 01 (розділ 1.4.3). Якщо колекції порожні, сервіс сам наповнить їх під час старту.
+
+### 4.3. Запуск
+```
+dotnet run --project Services/Reviews/Reviews.WebApi
+```
+Під час старту сервіс створює індекси (складений productId + createdAt, текстовий по title і text, унікальний «один відгук покупця на товар») і запускає сідінг лише для порожніх колекцій, тому повторний запуск не дублює дані. Swagger: адреса з консолі (`Now listening on ...`) + /swagger; стан підключення до MongoDB: /health.
+
+Налаштування в секції MongoDb файлу Services/Reviews/Reviews.WebApi/appsettings.json (окремі значення в appsettings.Development.json, appsettings.Staging.json, appsettings.Production.json):
+```json
+"MongoDb": {
+  "ConnectionString": "mongodb://localhost:27017/?maxPoolSize=50&serverSelectionTimeoutMS=5000",
+  "DatabaseName": "cosmetics_reviews",
+  "SeedData": true
+}
+```
+У Production сідінг вимкнено (`SeedData: false`).
+
+![Swagger](docs/lab04-swagger.png)
+
+![Документ reviews у Compass](docs/lab04-compass-document.png)
+
+![db.reviews.getIndexes()](docs/lab04-indexes.png)
