@@ -221,3 +221,79 @@ dotnet run --project Services/Reviews/Reviews.WebApi
 ![Документ reviews у Compass](docs/lab04-compass-document.png)
 
 ![db.reviews.getIndexes()](docs/lab04-indexes.png)
+
+
+## 5. Лаб. 05. Мікросервісна платформа на .NET Aspire: YARP Gateway, Aggregator, OpenTelemetry
+
+### 5.1. Схема платформи
+```
+Platform.AppHost/          оркестрація: контейнери баз, сервіси, Aggregator, Gateway
+Platform.ServiceDefaults/  Serilog, CorrelationId, OpenTelemetry, health checks, service discovery
+Platform.ApiGateway/       YARP — єдина точка входу, http://localhost:5000
+Platform.Aggregator/       повна картка замовлення з трьох сервісів
+Services/Orders/           orders-api   (Лаб. 02, SQL Server, ADO.NET + Dapper)
+Services/Catalog/          catalog-api  (Лаб. 03, SQL Server, EF Core)
+Services/Reviews/          reviews-api  (Лаб. 04, MongoDB, Clean Architecture)
+```
+Клієнт → gateway → aggregator / orders-api / catalog-api / reviews-api → бази. Сервіси знаходять один одного за логічними іменами ресурсів AppHost (service discovery), а не за портами.
+
+Ресурси AppHost:
+
+| Ресурс | Що це |
+|---|---|
+| sql | контейнер SQL Server, том cosmetics-sql-data, порт 14333 |
+| OrdersDb | база CosmeticsOrdersDb; при створенні виконуються скрипти db/p1 (schema, procedures, seed, 002_confirm_order) |
+| CatalogDb | база CosmeticsCatalogEfDb; схему створюють міграції EF Core під час старту catalog-api |
+| mongo | контейнер MongoDB, том cosmetics-mongo-data, порт 27018; при першому старті виконуються скрипти db/p3 |
+| ReviewsDb | база cosmetics_reviews |
+| orders-api, catalog-api, reviews-api | сервіси Лаб. 02–04 |
+| aggregator | Platform.Aggregator |
+| gateway | Platform.ApiGateway, фіксований порт 5000 |
+
+Порядок запуску задано через WaitFor: бази → сервіси → aggregator → gateway.
+
+### 5.2. Що потрібно для запуску
+- .NET 10 SDK;
+- запущений Docker Desktop (Engine running).
+
+### 5.3. Запуск
+Один раз задати пароль SQL Server у секретах AppHost (у коді його немає):
+```
+dotnet user-secrets set "Parameters:sql-password" "<складний пароль>" --project Platform.AppHost
+```
+Запустити всю платформу однією командою:
+```
+dotnet run --project Platform.AppHost
+```
+Посилання на Aspire Dashboard з'явиться в консолі (`Login to the dashboard at ...`). Перший запуск довший: Docker завантажує образи SQL Server і MongoDB. Коли всі ресурси мають статус Running, платформа готова. Дані зберігаються в томах і переживають перезапуск.
+
+![Ресурси в Aspire Dashboard](docs/lab05-resources.png)
+
+### 5.4. Запити через Gateway
+Gateway: http://localhost:5000
+
+| Шлях | Сервіс |
+|---|---|
+| /api/aggregator/** | aggregator |
+| /api/orders/**, /api/customers/** | orders-api |
+| /api/products/**, /api/categories/** | catalog-api |
+| /api/reviews/**, /api/discussions/** | reviews-api |
+
+```bash
+curl -i http://localhost:5000/api/orders/1
+curl -i "http://localhost:5000/api/products?page=1&pageSize=5"
+curl -i "http://localhost:5000/api/reviews?productId=1"
+curl -i http://localhost:5000/api/aggregator/orders/1/full
+curl -i -H "X-Correlation-Id: demo-order-1" http://localhost:5000/api/aggregator/orders/1/full
+```
+Кожна відповідь містить заголовок X-Correlation-Id: Gateway генерує його або зберігає переданий клієнтом, і той самий ідентифікатор іде в усі сервіси ланцюжка.
+
+Агрегувальний ендпоінт повертає картку замовлення: дані замовлення (orders-api), для кожної позиції — актуальні дані товару (catalog-api) і зведення відгуків (reviews-api), а також перелік warnings. Каталог і відгуки опитуються паралельно. Якщо один із них недоступний, відповідь лишається 200 з доступними даними й попередженням, наприклад "reviews-api is unavailable".
+
+### 5.5. Спостереження в Dashboard
+- Traces: trace запиту /api/aggregator/orders/1/full містить spans gateway → aggregator → orders-api, catalog-api і reviews-api з запитами до SQL Server і MongoDB; виклики catalog-api і reviews-api виконуються паралельно.
+- Structured logs: фільтр CorrelationId == <значення із заголовка відповіді> показує логи всіх сервісів одного запиту з властивостями ServiceName, Environment, MachineName, TraceId, SpanId.
+
+![Trace агрегувального запиту](docs/lab05-trace.png)
+
+![Логи за одним CorrelationId](docs/lab05-logs-correlation.png)

@@ -22,52 +22,56 @@ public sealed class IndexCreationService : IHostedService
     {
         var reviewKeys = Builders<Review>.IndexKeys;
 
-        await CreateAsync(_context.Reviews, new CreateIndexModel<Review>(
-            reviewKeys.Ascending(r => r.ProductId).Descending(r => r.CreatedAt),
-            new CreateIndexOptions { Name = "ix_reviews_product_createdAt" }), cancellationToken);
-
-        await CreateAsync(_context.Reviews, new CreateIndexModel<Review>(
-            reviewKeys.Ascending("author.customerId"),
-            new CreateIndexOptions { Name = "ix_reviews_author_customerId" }), cancellationToken);
-
-        await CreateAsync(_context.Reviews, new CreateIndexModel<Review>(
-            reviewKeys.Text(r => r.Title).Text(r => r.Text),
-            new CreateIndexOptions { Name = "ix_reviews_text", DefaultLanguage = "none" }), cancellationToken);
-
-        await CreateAsync(_context.Reviews, new CreateIndexModel<Review>(
-            reviewKeys.Ascending(r => r.ProductId).Ascending("author.customerId"),
-            new CreateIndexOptions<Review>
-            {
-                Name = "ux_reviews_product_customer",
-                Unique = true,
-                PartialFilterExpression = new BsonDocument("author.customerId", new BsonDocument("$gt", 0))
-            }), cancellationToken);
+        await CreateManyAsync(_context.Reviews,
+        [
+            new CreateIndexModel<Review>(
+                reviewKeys.Ascending(r => r.ProductId).Descending(r => r.CreatedAt),
+                new CreateIndexOptions { Name = "ix_reviews_product_createdAt" }),
+            new CreateIndexModel<Review>(
+                reviewKeys.Ascending("author.customerId"),
+                new CreateIndexOptions { Name = "ix_reviews_author_customerId" }),
+            new CreateIndexModel<Review>(
+                reviewKeys.Text(r => r.Title).Text(r => r.Text),
+                new CreateIndexOptions { Name = "ix_reviews_text", DefaultLanguage = "none" }),
+            new CreateIndexModel<Review>(
+                reviewKeys.Ascending(r => r.ProductId).Ascending("author.customerId"),
+                new CreateIndexOptions<Review>
+                {
+                    Name = "ux_reviews_product_customer",
+                    Unique = true,
+                    PartialFilterExpression = new BsonDocument("author.customerId", new BsonDocument("$gt", 0))
+                })
+        ], cancellationToken);
 
         var discussionKeys = Builders<Discussion>.IndexKeys;
 
-        await CreateAsync(_context.Discussions, new CreateIndexModel<Discussion>(
-            discussionKeys.Ascending(d => d.ProductId).Descending(d => d.LastMessageAt),
-            new CreateIndexOptions { Name = "ix_discussions_product_lastMessageAt" }), cancellationToken);
-
-        await CreateAsync(_context.Discussions, new CreateIndexModel<Discussion>(
-            discussionKeys.Ascending("tags"),
-            new CreateIndexOptions { Name = "ix_discussions_tags" }), cancellationToken);
+        await CreateManyAsync(_context.Discussions,
+        [
+            new CreateIndexModel<Discussion>(
+                discussionKeys.Ascending(d => d.ProductId).Descending(d => d.LastMessageAt),
+                new CreateIndexOptions { Name = "ix_discussions_product_lastMessageAt" }),
+            new CreateIndexModel<Discussion>(
+                discussionKeys.Ascending("tags"),
+                new CreateIndexOptions { Name = "ix_discussions_tags" })
+        ], cancellationToken);
     }
 
     public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 
-    private async Task CreateAsync<T>(IMongoCollection<T> collection, CreateIndexModel<T> model, CancellationToken ct)
+    private async Task CreateManyAsync<T>(IMongoCollection<T> collection, IReadOnlyList<CreateIndexModel<T>> models,
+        CancellationToken ct)
     {
+        var collectionName = collection.CollectionNamespace.CollectionName;
+
         try
         {
-            var name = await collection.Indexes.CreateOneAsync(model, cancellationToken: ct);
-            _logger.LogInformation("Index {IndexName} is ready on {Collection}",
-                name, collection.CollectionNamespace.CollectionName);
+            var names = await collection.Indexes.CreateManyAsync(models, ct);
+            _logger.LogInformation("Indexes {IndexNames} are ready on {Collection}", names, collectionName);
         }
         catch (MongoCommandException ex) when (ex.Code is 85 or 86)
         {
-            _logger.LogWarning("Index {IndexName} on {Collection} already exists with other options: {Reason}",
-                model.Options?.Name, collection.CollectionNamespace.CollectionName, ex.Message);
+            _logger.LogWarning("Some indexes on {Collection} already exist with other options: {Reason}",
+                collectionName, ex.Message);
         }
     }
 }

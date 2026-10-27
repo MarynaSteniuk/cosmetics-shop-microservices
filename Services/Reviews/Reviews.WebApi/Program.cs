@@ -1,23 +1,30 @@
 using AutoMapper;
+using MongoDB.Driver;
+using Platform.ServiceDefaults.Correlation;
 using Reviews.Application;
 using Reviews.Application.Common.Mappings;
 using Reviews.Infrastructure;
+using Reviews.Infrastructure.Persistence;
 using Reviews.WebApi.ErrorHandling;
 using Reviews.WebApi.HealthChecks;
-using Serilog;
 
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Host.UseSerilog((ctx, cfg) => cfg
-    .ReadFrom.Configuration(ctx.Configuration)
-    .Enrich.FromLogContext()
-    .Enrich.WithProperty("Application", "Reviews.WebApi")
-    .WriteTo.Console(outputTemplate:
-        "[{Timestamp:HH:mm:ss} {Level:u3}] {SourceContext}: {Message:lj}{NewLine}{Exception}"));
+builder.AddServiceDefaults();
 
 builder.Services
     .AddApplication(builder.Configuration)
     .AddInfrastructure(builder.Configuration);
+
+var reviewsConnection = builder.Configuration.GetConnectionString("ReviewsDb");
+if (!string.IsNullOrWhiteSpace(reviewsConnection))
+{
+    builder.Services.PostConfigure<MongoDbOptions>(options =>
+    {
+        options.ConnectionString = reviewsConnection;
+        options.DatabaseName = MongoUrl.Create(reviewsConnection).DatabaseName ?? options.DatabaseName;
+    });
+}
 
 builder.Services.AddAutoMapper(cfg =>
 {
@@ -39,9 +46,11 @@ builder.Services.AddSwaggerGen();
 
 var app = builder.Build();
 
+app.UseMiddleware<CorrelationIdMiddleware>();
+app.MapDefaultEndpoints();
+
 app.Services.GetRequiredService<IMapper>().ConfigurationProvider.AssertConfigurationIsValid();
 
-app.UseSerilogRequestLogging();
 app.UseExceptionHandler();
 app.UseStatusCodePages();
 
@@ -52,7 +61,6 @@ if (app.Environment.IsDevelopment())
 }
 
 app.MapGet("/", () => Results.Redirect("/swagger")).ExcludeFromDescription();
-app.MapHealthChecks("/health");
 app.MapControllers();
 
 app.Run();

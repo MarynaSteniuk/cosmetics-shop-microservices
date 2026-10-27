@@ -1,6 +1,5 @@
 using AutoMapper;
 using Catalog.Api.ErrorHandling;
-using Catalog.Api.Middleware;
 using Catalog.Bll.Mapping;
 using Catalog.Bll.Services;
 using Catalog.Bll.Validators;
@@ -9,18 +8,11 @@ using Catalog.Dal.Interfaces;
 using Catalog.Dal.Seeding;
 using FluentValidation;
 using Microsoft.EntityFrameworkCore;
-using Serilog;
-using Serilog.Events;
+using Platform.ServiceDefaults.Correlation;
 
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Host.UseSerilog((ctx, cfg) => cfg
-    .ReadFrom.Configuration(ctx.Configuration)
-    .MinimumLevel.Override("Microsoft.EntityFrameworkCore.Database.Command", LogEventLevel.Information)
-    .Enrich.FromLogContext()
-    .Enrich.WithProperty("Application", "Catalog.Api")
-    .WriteTo.Console(outputTemplate:
-        "[{Timestamp:HH:mm:ss} {Level:u3}] [{CorrelationId}] {SourceContext}: {Message:lj}{NewLine}{Exception}"));
+builder.AddServiceDefaults();
 
 var connectionString = builder.Configuration.GetConnectionString("CatalogDb")
     ?? throw new InvalidOperationException("Connection string 'CatalogDb' is missing");
@@ -62,7 +54,7 @@ using (var scope = app.Services.CreateScope())
 }
 
 app.UseMiddleware<CorrelationIdMiddleware>();
-app.UseSerilogRequestLogging();
+app.MapDefaultEndpoints();
 app.UseExceptionHandler();
 app.UseStatusCodePages();
 

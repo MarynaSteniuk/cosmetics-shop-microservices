@@ -1,7 +1,9 @@
 using System.Data;
+using System.Diagnostics;
 using AutoMapper;
 using Microsoft.Extensions.Logging;
 using Orders.Bll.Dtos;
+using Orders.Bll.Telemetry;
 using Orders.Dal.Interfaces;
 using Orders.Domain;
 using Orders.Domain.Exceptions;
@@ -46,6 +48,9 @@ public sealed class OrderService : IOrderService
 
     public async Task<OrderDto> CreateAsync(CreateOrderDto input, CancellationToken ct = default)
     {
+        using var activity = OrdersTelemetry.Source.StartActivity("CreateOrder");
+        activity?.SetTag("customer.id", input.CustomerId);
+
         var lines = input.Items
             .GroupBy(i => i.ProductId)
             .Select(g => new { ProductId = g.Key, Units = g.Sum(i => i.Units) })
@@ -114,19 +119,32 @@ public sealed class OrderService : IOrderService
 
             await _uow.Orders.UpdateAsync(new Order { Id = orderId, TotalAmount = total, UpdatedBy = Actor }, ct);
             await _uow.CommitAsync(ct);
+
+            activity?.SetTag("order.id", orderId);
+            activity?.SetTag("order.items_count", lines.Count);
+            activity?.SetTag("order.total", total);
+
+            _logger.LogInformation(
+                "Order {OrderId} created for customer {CustomerId}: {ItemsCount} items, amount {Amount}, status {Status}",
+                orderId, input.CustomerId, lines.Count, total, OrderStatuses.Submitted);
         }
-        catch
+        catch (Exception ex)
         {
             await _uow.RollbackAsync(ct);
+            activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
             throw;
         }
 
-        _logger.LogInformation("Order {OrderId} created for customer {CustomerId}", orderId, input.CustomerId);
         return await GetByIdAsync(orderId, ct);
     }
 
     public async Task ConfirmAsync(long id, CancellationToken ct = default)
     {
+        using var activity = OrdersTelemetry.Source.StartActivity("ConfirmOrder");
+        activity?.SetTag("order.id", id);
+
+        var itemsCount = 0;
+
         await _uow.BeginTransactionAsync(IsolationLevel.ReadCommitted, ct);
         try
         {
@@ -136,6 +154,8 @@ public sealed class OrderService : IOrderService
             if (order.Items.Count == 0)
                 throw new BusinessConflictException($"Order {id} has no items");
 
+            itemsCount = order.Items.Count;
+
             await _uow.Orders.ConfirmAsync(id, Actor, ct);
 
             foreach (var item in order.Items)
@@ -143,13 +163,16 @@ public sealed class OrderService : IOrderService
 
             await _uow.CommitAsync(ct);
         }
-        catch
+        catch (Exception ex)
         {
             await _uow.RollbackAsync(ct);
+            activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
             throw;
         }
 
-        _logger.LogInformation("Order {OrderId} confirmed", id);
+        activity?.SetTag("order.items_count", itemsCount);
+        _logger.LogInformation("Order {OrderId} confirmed, {ItemsCount} items, status {Status}",
+            id, itemsCount, OrderStatuses.StockConfirmed);
     }
 
     public async Task<OrderDto> ChangeStatusAsync(long id, ChangeOrderStatusDto input, CancellationToken ct = default)

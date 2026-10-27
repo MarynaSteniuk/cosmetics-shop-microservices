@@ -2,6 +2,7 @@ using AutoMapper;
 using Catalog.Bll.Dtos;
 using Catalog.Bll.Queries;
 using Catalog.Bll.Specifications;
+using Catalog.Bll.Telemetry;
 using Catalog.Dal.Interfaces;
 using Catalog.Domain.Entities;
 using Catalog.Domain.Exceptions;
@@ -54,6 +55,10 @@ public sealed class ProductService : IProductService
     public async Task<ProductDto> CreateAsync(CreateProductDto input, CancellationToken ct = default)
     {
         var sku = input.Sku.Trim().ToUpperInvariant();
+
+        using var activity = CatalogTelemetry.Source.StartActivity("CreateProduct");
+        activity?.SetTag("product.sku", sku);
+        activity?.SetTag("brand.id", input.BrandId);
         if (await _uow.Products.ExistsBySkuAsync(sku, ct))
             throw new ConflictException($"Product with SKU '{sku}' already exists");
 
@@ -79,12 +84,18 @@ public sealed class ProductService : IProductService
         await _uow.Products.AddAsync(product, ct);
         await _uow.SaveChangesAsync(ct);
 
-        _logger.LogInformation("Product {ProductId} created with SKU {Sku}", product.Id, product.Sku);
+        activity?.SetTag("product.id", product.Id);
+        _logger.LogInformation("Product {ProductId} created with SKU {Sku}, price {Price}, stock {Stock}",
+            product.Id, product.Sku, product.Price, product.AvailableStock);
         return await GetByIdAsync(product.Id, ct);
     }
 
     public async Task<ProductDto> ChangePriceAsync(long id, ChangePriceDto input, CancellationToken ct = default)
     {
+        using var activity = CatalogTelemetry.Source.StartActivity("ChangeProductPrice");
+        activity?.SetTag("product.id", id);
+        activity?.SetTag("product.new_price", input.Price);
+
         var product = await FindAsync(id, ct);
         var oldPrice = product.Price;
 
@@ -109,6 +120,10 @@ public sealed class ProductService : IProductService
 
     public async Task<ProductDto> RemoveStockAsync(long id, StockChangeDto input, CancellationToken ct = default)
     {
+        using var activity = CatalogTelemetry.Source.StartActivity("RemoveProductStock");
+        activity?.SetTag("product.id", id);
+        activity?.SetTag("stock.quantity", input.Quantity);
+
         var product = await FindAsync(id, ct);
 
         product.RemoveStock(input.Quantity);

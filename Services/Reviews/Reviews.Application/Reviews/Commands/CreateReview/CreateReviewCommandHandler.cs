@@ -1,5 +1,6 @@
 using MediatR;
 using Microsoft.Extensions.Logging;
+using Reviews.Application.Common.Telemetry;
 using Reviews.Domain.Entities;
 using Reviews.Domain.Interfaces;
 using Reviews.Domain.ValueObjects;
@@ -19,6 +20,10 @@ public sealed class CreateReviewCommandHandler : IRequestHandler<CreateReviewCom
 
     public async Task<string> Handle(CreateReviewCommand command, CancellationToken cancellationToken)
     {
+        using var activity = ReviewsTelemetry.Source.StartActivity("CreateReview");
+        activity?.SetTag("product.id", command.ProductId);
+        activity?.SetTag("review.rating", command.Rating);
+
         var usageDuration = command.UsageValue is { } value && command.UsageUnit is { } unit
             ? new UsageDuration(value, unit)
             : null;
@@ -35,7 +40,9 @@ public sealed class CreateReviewCommandHandler : IRequestHandler<CreateReviewCom
 
         await _reviews.AddAsync(review, cancellationToken);
 
-        _logger.LogInformation("Review {ReviewId} created for product {ProductId}", review.Id, review.ProductId);
+        activity?.SetTag("review.id", review.Id.ToString());
+        _logger.LogInformation("Review {ReviewId} created for product {ProductId} with rating {Rating}",
+            review.Id, review.ProductId, review.Rating.Value);
         return review.Id.ToString();
     }
 }
