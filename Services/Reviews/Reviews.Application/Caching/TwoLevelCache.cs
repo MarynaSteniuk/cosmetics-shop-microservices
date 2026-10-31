@@ -24,7 +24,7 @@ public sealed class TwoLevelCache : ITwoLevelCache
         _logger = logger;
     }
 
-    public async Task<T?> GetOrCreateAsync<T>(string key, CacheProfile profile, Func<CancellationToken, Task<T?>> factory,
+    public async Task<T?> GetOrCreateAsync<T>(string key, CacheProfile profile, Func<CancellationToken, Task<T?>> loadFromDatabase,
         CancellationToken ct = default) where T : class
     {
         if (_memory.TryGetValue(key, out T? fromMemory) && fromMemory is not null)
@@ -44,9 +44,11 @@ public sealed class TwoLevelCache : ITwoLevelCache
             return fromRedis;
         }
 
-        var value = await factory(ct);
+        var value = await loadFromDatabase(ct);
         if (value is null)
             return null;
+
+        _logger.LogDebug("Loaded {CacheKey} from database, filling L2 and L1", key);
 
         await WriteDistributedAsync(key, value, profile, ct);
         SetMemory(key, value, profile);

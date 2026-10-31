@@ -9,6 +9,7 @@ using Catalog.Dal.Interfaces;
 using Catalog.Dal.Seeding;
 using Catalog.Dal;
 using FluentValidation;
+using Microsoft.AspNetCore.Server.Kestrel.Core;
 using Microsoft.EntityFrameworkCore;
 using Platform.ServiceDefaults.Correlation;
 using Platform.ServiceDefaults.Grpc;
@@ -20,6 +21,8 @@ builder.AddServiceDefaults();
 builder.Services.AddMemoryCache(options => options.SizeLimit = 10_000);
 builder.AddRedisDistributedCache("redis");
 
+builder.WebHost.ConfigureKestrel(options =>
+    options.ConfigureEndpointDefaults(endpoint => endpoint.Protocols = HttpProtocols.Http1AndHttp2));
 builder.Services.AddGrpc(options => options.Interceptors.Add<GrpcServerLoggingInterceptor>());
 builder.Services.AddSingleton<CacheMetrics>();
 builder.Services.AddSingleton<ITwoLevelCache, TwoLevelCache>();

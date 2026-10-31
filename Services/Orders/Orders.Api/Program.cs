@@ -1,4 +1,5 @@
 using AutoMapper;
+using Microsoft.AspNetCore.Server.Kestrel.Core;
 using Orders.Api.ErrorHandling;
 using Orders.Api.Grpc;
 using Orders.Bll.Caching;
@@ -16,6 +17,8 @@ builder.AddServiceDefaults();
 builder.Services.AddMemoryCache(options => options.SizeLimit = 10_000);
 builder.AddRedisDistributedCache("redis");
 
+builder.WebHost.ConfigureKestrel(options =>
+    options.ConfigureEndpointDefaults(endpoint => endpoint.Protocols = HttpProtocols.Http1AndHttp2));
 builder.Services.AddGrpc(options => options.Interceptors.Add<GrpcServerLoggingInterceptor>());
 builder.Services.AddSingleton<CacheMetrics>();
 builder.Services.AddSingleton<ITwoLevelCache, TwoLevelCache>();
