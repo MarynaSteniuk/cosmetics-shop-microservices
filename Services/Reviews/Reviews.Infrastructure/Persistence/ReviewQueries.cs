@@ -50,6 +50,38 @@ public sealed class ReviewQueries : IReviewQueries
         return new PagedResult<ReviewDto>(items, totalCount, filter.Page, filter.PageSize);
     }
 
+    public async Task<ReviewsSummaryDto> GetSummaryAsync(long productId, int latestCount, CancellationToken ct = default)
+    {
+        var match = new BsonDocument("productId", productId);
+
+        var stats = await _reviews.Aggregate()
+            .Match(match)
+            .Group(new BsonDocument
+            {
+                { "_id", BsonNull.Value },
+                { "count", new BsonDocument("$sum", 1) },
+                { "average", new BsonDocument("$avg", "$rating") }
+            })
+            .FirstOrDefaultAsync(ct);
+
+        var latest = await _reviews.Aggregate()
+            .Match(match)
+            .Sort(new BsonDocument { { "createdAt", -1 }, { "_id", -1 } })
+            .Limit(latestCount)
+            .Project<ReviewDto>(BuildProjection(includeComments: false))
+            .ToListAsync(ct);
+
+        return new ReviewsSummaryDto
+        {
+            ProductId = productId,
+            TotalCount = stats?["count"].ToInt64() ?? 0,
+            AverageRating = stats is null || stats["average"].IsBsonNull
+                ? null
+                : Math.Round(stats["average"].ToDouble(), 2),
+            Latest = latest
+        };
+    }
+
     private static BsonDocument BuildProjection(bool includeComments)
     {
         var projection = new BsonDocument

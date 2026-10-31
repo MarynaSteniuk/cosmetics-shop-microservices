@@ -1,4 +1,5 @@
 using AutoMapper;
+using Catalog.Bll.Caching;
 using Catalog.Bll.Dtos;
 using Catalog.Bll.Queries;
 using Catalog.Bll.Specifications;
@@ -14,12 +15,14 @@ public sealed class ProductService : IProductService
 {
     private readonly IUnitOfWork _uow;
     private readonly IMapper _mapper;
+    private readonly ITwoLevelCache _cache;
     private readonly ILogger<ProductService> _logger;
 
-    public ProductService(IUnitOfWork uow, IMapper mapper, ILogger<ProductService> logger)
+    public ProductService(IUnitOfWork uow, IMapper mapper, ITwoLevelCache cache, ILogger<ProductService> logger)
     {
         _uow = uow;
         _mapper = mapper;
+        _cache = cache;
         _logger = logger;
     }
 
@@ -46,10 +49,32 @@ public sealed class ProductService : IProductService
     }
 
     public async Task<ProductDto> GetByIdAsync(long id, CancellationToken ct = default)
+        => await _cache.GetOrCreateAsync<ProductDto>(CatalogCacheKeys.Product(id), CatalogCacheProfiles.Product,
+               async token =>
+               {
+                   var product = await _uow.Products.GetWithDetailsAsync(id, token);
+                   return product is null ? null : _mapper.Map<ProductDto>(product);
+               }, ct)
+           ?? throw new EntityNotFoundException(nameof(Product), id);
+
+    public async Task<ProductsLookupDto> GetByIdsAsync(IReadOnlyCollection<long> ids, CancellationToken ct = default)
     {
-        var product = await _uow.Products.GetWithDetailsAsync(id, ct)
-            ?? throw new EntityNotFoundException(nameof(Product), id);
-        return _mapper.Map<ProductDto>(product);
+        var products = new List<ProductDto>();
+        var missing = new List<long>();
+
+        foreach (var id in ids.Distinct())
+        {
+            try
+            {
+                products.Add(await GetByIdAsync(id, ct));
+            }
+            catch (EntityNotFoundException)
+            {
+                missing.Add(id);
+            }
+        }
+
+        return new ProductsLookupDto(products, missing);
     }
 
     public async Task<ProductDto> CreateAsync(CreateProductDto input, CancellationToken ct = default)
@@ -87,6 +112,8 @@ public sealed class ProductService : IProductService
         activity?.SetTag("product.id", product.Id);
         _logger.LogInformation("Product {ProductId} created with SKU {Sku}, price {Price}, stock {Stock}",
             product.Id, product.Sku, product.Price, product.AvailableStock);
+
+        await _cache.InvalidateAsync(input.CategoryIds.Select(CatalogCacheKeys.CategoryProducts), "ProductCreated", ct);
         return await GetByIdAsync(product.Id, ct);
     }
 
@@ -104,6 +131,8 @@ public sealed class ProductService : IProductService
 
         _logger.LogInformation("Product {ProductId} price changed from {OldPrice} to {NewPrice}",
             id, oldPrice, input.Price);
+
+        await InvalidateProductAsync(product, "ProductPriceChanged", ct);
         return await GetByIdAsync(id, ct);
     }
 
@@ -115,6 +144,8 @@ public sealed class ProductService : IProductService
         await _uow.SaveChangesAsync(ct);
 
         _logger.LogInformation("Product {ProductId} stock increased by {Quantity}", id, input.Quantity);
+
+        await InvalidateProductAsync(product, "ProductStockChanged", ct);
         return await GetByIdAsync(id, ct);
     }
 
@@ -130,20 +161,34 @@ public sealed class ProductService : IProductService
         await _uow.SaveChangesAsync(ct);
 
         _logger.LogInformation("Product {ProductId} stock decreased by {Quantity}", id, input.Quantity);
+
+        await InvalidateProductAsync(product, "ProductStockChanged", ct);
         return await GetByIdAsync(id, ct);
     }
 
     public async Task DeleteAsync(long id, CancellationToken ct = default)
     {
         var product = await FindAsync(id, ct);
+        var categoryIds = product.ProductCategories.Select(pc => pc.CategoryId).ToList();
 
         _uow.Products.Delete(product);
         await _uow.SaveChangesAsync(ct);
 
         _logger.LogInformation("Product {ProductId} deleted", id);
+
+        await _cache.InvalidateAsync(
+            categoryIds.Select(CatalogCacheKeys.CategoryProducts).Prepend(CatalogCacheKeys.Product(id)),
+            "ProductDeleted", ct);
     }
 
     private async Task<Product> FindAsync(long id, CancellationToken ct)
-        => await _uow.Products.GetByIdAsync(id, ct)
+        => await _uow.Products.GetWithDetailsAsync(id, ct)
            ?? throw new EntityNotFoundException(nameof(Product), id);
+
+    private Task InvalidateProductAsync(Product product, string reason, CancellationToken ct)
+        => _cache.InvalidateAsync(
+            product.ProductCategories
+                .Select(pc => CatalogCacheKeys.CategoryProducts(pc.CategoryId))
+                .Prepend(CatalogCacheKeys.Product(product.Id)),
+            reason, ct);
 }

@@ -1,4 +1,5 @@
 using MediatR;
+using Reviews.Application.Caching;
 using Microsoft.Extensions.Logging;
 using Reviews.Application.Common.Telemetry;
 using Reviews.Domain.Entities;
@@ -10,11 +11,14 @@ namespace Reviews.Application.Reviews.Commands.CreateReview;
 public sealed class CreateReviewCommandHandler : IRequestHandler<CreateReviewCommand, string>
 {
     private readonly IReviewRepository _reviews;
+    private readonly ITwoLevelCache _cache;
     private readonly ILogger<CreateReviewCommandHandler> _logger;
 
-    public CreateReviewCommandHandler(IReviewRepository reviews, ILogger<CreateReviewCommandHandler> logger)
+    public CreateReviewCommandHandler(IReviewRepository reviews, ITwoLevelCache cache,
+        ILogger<CreateReviewCommandHandler> logger)
     {
         _reviews = reviews;
+        _cache = cache;
         _logger = logger;
     }
 
@@ -43,6 +47,9 @@ public sealed class CreateReviewCommandHandler : IRequestHandler<CreateReviewCom
         activity?.SetTag("review.id", review.Id.ToString());
         _logger.LogInformation("Review {ReviewId} created for product {ProductId} with rating {Rating}",
             review.Id, review.ProductId, review.Rating.Value);
+
+        await _cache.InvalidateAsync([ReviewsCacheKeys.ProductSummary(review.ProductId)], "ReviewCreated",
+            cancellationToken);
         return review.Id.ToString();
     }
 }

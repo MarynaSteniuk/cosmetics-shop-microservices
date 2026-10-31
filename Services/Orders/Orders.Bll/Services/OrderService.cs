@@ -2,6 +2,7 @@ using System.Data;
 using System.Diagnostics;
 using AutoMapper;
 using Microsoft.Extensions.Logging;
+using Orders.Bll.Caching;
 using Orders.Bll.Dtos;
 using Orders.Bll.Telemetry;
 using Orders.Dal.Interfaces;
@@ -17,21 +18,25 @@ public sealed class OrderService : IOrderService
 
     private readonly IUnitOfWork _uow;
     private readonly IMapper _mapper;
+    private readonly ITwoLevelCache _cache;
     private readonly ILogger<OrderService> _logger;
 
-    public OrderService(IUnitOfWork uow, IMapper mapper, ILogger<OrderService> logger)
+    public OrderService(IUnitOfWork uow, IMapper mapper, ITwoLevelCache cache, ILogger<OrderService> logger)
     {
         _uow = uow;
         _mapper = mapper;
+        _cache = cache;
         _logger = logger;
     }
 
     public async Task<OrderDto> GetByIdAsync(long id, CancellationToken ct = default)
-    {
-        var order = await _uow.Orders.GetWithItemsAsync(id, ct)
-            ?? throw new NotFoundException($"Order {id} not found");
-        return _mapper.Map<OrderDto>(order);
-    }
+        => await _cache.GetOrCreateAsync<OrderDto>(OrdersCacheKeys.Order(id), OrdersCacheProfiles.Order,
+               async token =>
+               {
+                   var order = await _uow.Orders.GetWithItemsAsync(id, token);
+                   return order is null ? null : _mapper.Map<OrderDto>(order);
+               }, ct)
+           ?? throw new NotFoundException($"Order {id} not found");
 
     public async Task<IReadOnlyList<OrderSummaryDto>> GetByCustomerAsync(long customerId, string? status,
         CancellationToken ct = default)
@@ -173,6 +178,8 @@ public sealed class OrderService : IOrderService
         activity?.SetTag("order.items_count", itemsCount);
         _logger.LogInformation("Order {OrderId} confirmed, {ItemsCount} items, status {Status}",
             id, itemsCount, OrderStatuses.StockConfirmed);
+
+        await _cache.InvalidateAsync([OrdersCacheKeys.Order(id), OrdersCacheKeys.AggregatedOrder(id)], "OrderConfirmed", ct);
     }
 
     public async Task<OrderDto> ChangeStatusAsync(long id, ChangeOrderStatusDto input, CancellationToken ct = default)
@@ -184,6 +191,8 @@ public sealed class OrderService : IOrderService
         await _uow.Orders.ChangeStatusAsync(id, status, Actor, ct);
         _logger.LogInformation("Order {OrderId} moved to {Status}", id, status);
 
+        await _cache.InvalidateAsync([OrdersCacheKeys.Order(id), OrdersCacheKeys.AggregatedOrder(id)], "OrderStatusChanged", ct);
+
         return await GetByIdAsync(id, ct);
     }
 
@@ -191,5 +200,7 @@ public sealed class OrderService : IOrderService
     {
         await _uow.Orders.DeleteAsync(id, ct);
         _logger.LogInformation("Order {OrderId} deleted", id);
+
+        await _cache.InvalidateAsync([OrdersCacheKeys.Order(id), OrdersCacheKeys.AggregatedOrder(id)], "OrderDeleted", ct);
     }
 }

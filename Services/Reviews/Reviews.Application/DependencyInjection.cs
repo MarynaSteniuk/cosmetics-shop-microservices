@@ -1,6 +1,7 @@
 using FluentValidation;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Reviews.Application.Caching;
 using Reviews.Application.Common.Behaviors;
 
 namespace Reviews.Application;
@@ -24,6 +25,9 @@ public static class DependencyInjection
         });
 
         services.AddValidatorsFromAssembly(assembly);
+
+        services.AddSingleton<CacheMetrics>();
+        services.AddSingleton<ITwoLevelCache, TwoLevelCache>();
 
         return services;
     }

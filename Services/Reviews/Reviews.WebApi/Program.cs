@@ -1,16 +1,23 @@
 using AutoMapper;
 using MongoDB.Driver;
 using Platform.ServiceDefaults.Correlation;
-using Reviews.Application;
+using Platform.ServiceDefaults.Grpc;
 using Reviews.Application.Common.Mappings;
-using Reviews.Infrastructure;
+using Reviews.Application;
 using Reviews.Infrastructure.Persistence;
+using Reviews.Infrastructure;
 using Reviews.WebApi.ErrorHandling;
+using Reviews.WebApi.Grpc;
 using Reviews.WebApi.HealthChecks;
 
 var builder = WebApplication.CreateBuilder(args);
 
 builder.AddServiceDefaults();
+
+builder.Services.AddMemoryCache(options => options.SizeLimit = 10_000);
+builder.AddRedisDistributedCache("redis");
+
+builder.Services.AddGrpc(options => options.Interceptors.Add<GrpcServerLoggingInterceptor>());
 
 builder.Services
     .AddApplication(builder.Configuration)
@@ -48,6 +55,7 @@ var app = builder.Build();
 
 app.UseMiddleware<CorrelationIdMiddleware>();
 app.MapDefaultEndpoints();
+app.MapGrpcService<ReviewsGrpcService>();
 
 app.Services.GetRequiredService<IMapper>().ConfigurationProvider.AssertConfigurationIsValid();
 

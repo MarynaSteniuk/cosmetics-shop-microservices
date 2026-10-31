@@ -5,7 +5,7 @@ using Platform.Aggregator.Telemetry;
 
 namespace Platform.Aggregator.Services;
 
-public sealed class OrderAggregationService : IOrderAggregationService
+public sealed class HttpOrderAggregationService : IOrderAggregationService
 {
     private const string OrdersService = "orders-api";
     private const string CatalogService = "catalog-api";
@@ -15,10 +15,10 @@ public sealed class OrderAggregationService : IOrderAggregationService
     private readonly OrdersClient _orders;
     private readonly CatalogClient _catalog;
     private readonly ReviewsClient _reviews;
-    private readonly ILogger<OrderAggregationService> _logger;
+    private readonly ILogger<HttpOrderAggregationService> _logger;
 
-    public OrderAggregationService(OrdersClient orders, CatalogClient catalog, ReviewsClient reviews,
-        ILogger<OrderAggregationService> logger)
+    public HttpOrderAggregationService(OrdersClient orders, CatalogClient catalog, ReviewsClient reviews,
+        ILogger<HttpOrderAggregationService> logger)
     {
         _orders = orders;
         _catalog = catalog;
@@ -28,7 +28,7 @@ public sealed class OrderAggregationService : IOrderAggregationService
 
     public async Task<FullOrderDto?> GetFullOrderAsync(long orderId, CancellationToken ct)
     {
-        using var activity = AggregatorTelemetry.Source.StartActivity("AggregateFullOrder");
+        using var activity = AggregatorTelemetry.Source.StartActivity("AggregateFullOrderHttp");
         activity?.SetTag("order.id", orderId);
 
         var warnings = new List<string>();

@@ -1,0 +1,47 @@
+syntax = "proto3";
+
+option csharp_namespace = "Reviews.Grpc";
+
+package reviews;
+
+import "google/protobuf/timestamp.proto";
+
+// Читання відгуків для внутрішніх сервісів платформи.
+service ReviewsService {
+  // Один відгук за ObjectId (24 hex-символи); NOT_FOUND, якщо відгуку немає.
+  rpc GetReview (GetReviewRequest) returns (ReviewReply);
+  // Зведення відгуків для кількох товарів: кількість, середня оцінка, останні відгуки.
+  rpc GetReviewsSummaryForProducts (GetReviewsSummaryRequest) returns (ReviewsSummaryReply);
+}
+
+message GetReviewRequest {
+  string id = 1;
+}
+
+message GetReviewsSummaryRequest {
+  repeated int64 product_ids = 1;
+  // Скільки останніх відгуків повернути для кожного товару (1–10).
+  int32 latest_count = 2;
+}
+
+message ReviewsSummaryReply {
+  repeated ProductReviewsSummary summaries = 1;
+}
+
+message ProductReviewsSummary {
+  int64 product_id = 1;
+  int64 total_count = 2;
+  // Відсутня, якщо відгуків немає.
+  optional double average_rating = 3;
+  repeated ReviewReply latest = 4;
+}
+
+message ReviewReply {
+  string id = 1;
+  int64 product_id = 2;
+  string author_name = 3;
+  int32 rating = 4;
+  optional string title = 5;
+  string text = 6;
+  google.protobuf.Timestamp created_at = 7;
+}

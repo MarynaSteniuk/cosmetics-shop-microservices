@@ -297,3 +297,58 @@ curl -i -H "X-Correlation-Id: demo-order-1" http://localhost:5000/api/aggregator
 ![Trace агрегувального запиту](docs/lab05-trace.png)
 
 ![Логи за одним CorrelationId](docs/lab05-logs-correlation.png)
+
+
+## 6. Лаб. 06. gRPC-виклики та дворівневе кешування (Memory + Redis)
+
+### 6.1. Що додано
+- Redis в AppHost (ресурс `redis`, том `cosmetics-redis-data`); посилання на нього мають orders-api, catalog-api, reviews-api і aggregator.
+- Дворівневий кеш у кожному сервісі (`Orders.Bll/Caching`, `Catalog.Bll/Caching`, `Reviews.Application/Caching`): L1 — `IMemoryCache` (SizeLimit, Size, sliding і absolute expiration), L2 — Redis через `IDistributedCache` (`AddRedisDistributedCache("redis")`), далі база даних.
+- gRPC-контракти: `Services/Orders/Orders.Api/Protos/orders.proto`, `Services/Catalog/Catalog.Api/Protos/catalog.proto`, `Services/Reviews/Reviews.WebApi/Protos/reviews.proto`; gRPC-сервіси в папках `Grpc/` кожного Api.
+- Aggregator викликає мікросервіси через типізовані gRPC-клієнти паралельно (`Task.WhenAll`) і кешує повну картку замовлення в Redis на 30 с.
+- Серверний gRPC-interceptor у ServiceDefaults, клієнтський — в Aggregator; метрики кешу `cache.hits` / `cache.misses` (Meter `Cosmetics.Cache`, тег `cache.level` = L1 / L2).
+
+### 6.2. Ключі кешу й TTL
+
+| Ключ | L1 (пам'ять) | L2 (Redis) |
+|---|---|---|
+| `catalog:product:{id}` | 2 хв, sliding 1 хв | 10 хв |
+| `catalog:categories:all` | 10 хв | 1 год |
+| `catalog:category:{id}:products` | 1 хв, sliding 30 с | 5 хв |
+| `orders:order:{id}` | 30 с, sliding 15 с | 2 хв |
+| `orders:customer:{id}` | 20 с, sliding 10 с | 1 хв |
+| `reviews:review:{id}` | 1 хв, sliding 30 с | 5 хв |
+| `reviews:product:{id}:summary` | 1 хв | 5 хв |
+| `aggregator:order:{id}:full` | — | 30 с |
+
+L1 завжди коротший за L2. Після POST/PUT/DELETE пов'язані ключі видаляються одразу (картка, списки категорій, зведення відгуків, агрегована картка замовлення), причина записується в лог. Якщо Redis недоступний, сервіси працюють далі з пам'яттю й базою.
+
+### 6.3. Запити
+```bash
+curl -i http://localhost:5000/api/products/1
+curl -i http://localhost:5000/api/aggregator/orders/1/full
+curl -i http://localhost:5000/api/aggregator/orders/1/full/grpc
+curl -i http://localhost:5000/api/aggregator/orders/1/full/http
+```
+`/full` — основний ендпоінт (кеш Redis → gRPC), `/full/grpc` — gRPC без кешу, `/full/http` — HTTP-агрегація з Лаб. 05 без кешу; два останні потрібні для порівняння затримок.
+
+### 6.4. Порівняння HTTP і gRPC
+Тривалість агрегувального запиту `GET /api/aggregator/orders/1/full/http` і `.../full/grpc` у Traces Aspire Dashboard (без кешу агрегату; перший, «холодний» запит кожного типу не враховано):
+
+| Транспорт | Заміри, мс | Середнє, мс |
+|---|---|---|
+| HTTP (Лаб. 05) | 22.24 · 24.53 · 21.46 | ≈ 22.7 |
+| gRPC (Лаб. 06) | 13.66 · 23.16 · 12.77 · 21.69 | ≈ 17.8 |
+
+gRPC-агрегація в середньому на ≈ 20 % швидша. Різниця дає два чинники: через HTTP Aggregator робить окремий запит до catalog-api і reviews-api на кожен товар замовлення (у trace 7 spans aggregator), а через gRPC — один пакетний виклик `GetProductsByIds` / `GetReviewsSummaryForProducts` (5 spans); крім того, gRPC мультиплексує всі виклики в одному з'єднанні HTTP/2 і передає компактні бінарні повідомлення Protobuf замість JSON. Перший запит кожного типу триває довше (з'єднання, прогрів кешів сервісів), тому в порівнянні не враховується.
+
+![HTTP vs gRPC](docs/lab06-http-vs-grpc.png)
+
+### 6.5. Скріни
+![Trace агрегувального запиту з gRPC-spans](docs/lab06-grpc-trace.png)
+
+![Перший запит товару: промах L1 і L2, SQL-запит, запис у Redis](docs/lab06-cache-miss-trace.png)
+
+![Повторний запит товару без SQL-span](docs/lab06-cache-hit-trace.png)
+
+![Метрика попадань у кеш](docs/lab06-cache-metrics.png)

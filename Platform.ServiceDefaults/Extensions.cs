@@ -86,7 +86,8 @@ public static class Extensions
             .WithMetrics(metrics => metrics
                 .AddAspNetCoreInstrumentation()
                 .AddHttpClientInstrumentation()
-                .AddRuntimeInstrumentation())
+                .AddRuntimeInstrumentation()
+                .AddMeter("Cosmetics.Cache"))
             .WithTracing(tracing => tracing
                 .SetSampler(CreateSampler(builder))
                 .AddSource(builder.Environment.ApplicationName)

@@ -1,5 +1,6 @@
 using AutoMapper;
 using MediatR;
+using Reviews.Application.Caching;
 using Microsoft.Extensions.Logging;
 using MongoDB.Bson;
 using Reviews.Application.Common.Exceptions;
@@ -15,12 +16,15 @@ public sealed class UpdateReviewCommandHandler : IRequestHandler<UpdateReviewCom
 {
     private readonly IReviewRepository _reviews;
     private readonly IMapper _mapper;
+    private readonly ITwoLevelCache _cache;
     private readonly ILogger<UpdateReviewCommandHandler> _logger;
 
-    public UpdateReviewCommandHandler(IReviewRepository reviews, IMapper mapper, ILogger<UpdateReviewCommandHandler> logger)
+    public UpdateReviewCommandHandler(IReviewRepository reviews, IMapper mapper, ITwoLevelCache cache,
+        ILogger<UpdateReviewCommandHandler> logger)
     {
         _reviews = reviews;
         _mapper = mapper;
+        _cache = cache;
         _logger = logger;
     }
 
@@ -42,6 +46,10 @@ public sealed class UpdateReviewCommandHandler : IRequestHandler<UpdateReviewCom
 
         _logger.LogInformation("Review {ReviewId} updated to version {Version} with rating {Rating}",
             command.Id, review.Version, command.Rating);
+
+        await _cache.InvalidateAsync(
+            [ReviewsCacheKeys.Review(command.Id), ReviewsCacheKeys.ProductSummary(review.ProductId)],
+            "ReviewUpdated", cancellationToken);
         return _mapper.Map<ReviewDto>(review);
     }
 }

@@ -1,5 +1,6 @@
 using AutoMapper;
 using Microsoft.Extensions.Logging;
+using Orders.Bll.Caching;
 using Orders.Bll.Dtos;
 using Orders.Dal.Interfaces;
 using Orders.Domain.Exceptions;
@@ -13,12 +14,14 @@ public sealed class CustomerService : ICustomerService
 
     private readonly IUnitOfWork _uow;
     private readonly IMapper _mapper;
+    private readonly ITwoLevelCache _cache;
     private readonly ILogger<CustomerService> _logger;
 
-    public CustomerService(IUnitOfWork uow, IMapper mapper, ILogger<CustomerService> logger)
+    public CustomerService(IUnitOfWork uow, IMapper mapper, ITwoLevelCache cache, ILogger<CustomerService> logger)
     {
         _uow = uow;
         _mapper = mapper;
+        _cache = cache;
         _logger = logger;
     }
 
@@ -34,11 +37,13 @@ public sealed class CustomerService : ICustomerService
     }
 
     public async Task<CustomerDto> GetByIdAsync(long id, CancellationToken ct = default)
-    {
-        var customer = await _uow.Customers.GetByIdAsync(id, ct)
-            ?? throw new NotFoundException($"Customer {id} not found");
-        return _mapper.Map<CustomerDto>(customer);
-    }
+        => await _cache.GetOrCreateAsync<CustomerDto>(OrdersCacheKeys.Customer(id), OrdersCacheProfiles.Customer,
+               async token =>
+               {
+                   var customer = await _uow.Customers.GetByIdAsync(id, token);
+                   return customer is null ? null : _mapper.Map<CustomerDto>(customer);
+               }, ct)
+           ?? throw new NotFoundException($"Customer {id} not found");
 
     public async Task<CustomerDto> CreateAsync(CreateCustomerDto input, CancellationToken ct = default)
     {
@@ -75,6 +80,8 @@ public sealed class CustomerService : ICustomerService
         await _uow.Customers.UpdateAsync(customer, ct);
         _logger.LogInformation("Customer {CustomerId} updated", id);
 
+        await _cache.InvalidateAsync([OrdersCacheKeys.Customer(id)], "CustomerUpdated", ct);
+
         return await GetByIdAsync(id, ct);
     }
 
@@ -84,5 +91,7 @@ public sealed class CustomerService : ICustomerService
             throw new NotFoundException($"Customer {id} not found");
 
         _logger.LogInformation("Customer {CustomerId} deleted", id);
+
+        await _cache.InvalidateAsync([OrdersCacheKeys.Customer(id)], "CustomerDeleted", ct);
     }
 }
