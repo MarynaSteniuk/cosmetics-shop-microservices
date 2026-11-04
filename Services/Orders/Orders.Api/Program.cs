@@ -2,6 +2,8 @@ using AutoMapper;
 using Microsoft.AspNetCore.Server.Kestrel.Core;
 using Orders.Api.ErrorHandling;
 using Orders.Api.Grpc;
+using Orders.Api.HealthChecks;
+using Orders.Api.Metrics;
 using Orders.Bll.Caching;
 using Orders.Bll.Mapping;
 using Orders.Bll.Services;
@@ -15,13 +17,19 @@ var builder = WebApplication.CreateBuilder(args);
 builder.AddServiceDefaults();
 
 builder.Services.AddMemoryCache(options => options.SizeLimit = 10_000);
-builder.AddRedisDistributedCache("redis");
+builder.AddRedisDistributedCache("redis", settings => settings.DisableHealthChecks = true);
 
 builder.WebHost.ConfigureKestrel(options =>
     options.ConfigureEndpointDefaults(endpoint => endpoint.Protocols = HttpProtocols.Http1AndHttp2));
 builder.Services.AddGrpc(options => options.Interceptors.Add<GrpcServerLoggingInterceptor>());
+builder.Services.AddGrpcHealthChecks();
+
+builder.Services.AddOrdersHealthChecks(builder.Configuration);
 builder.Services.AddSingleton<CacheMetrics>();
 builder.Services.AddSingleton<ITwoLevelCache, TwoLevelCache>();
+
+builder.Services.AddSingleton<OrderMetrics>();
+builder.Services.AddHostedService<OrdersMetricsSnapshotService>();
 
 var connectionString = builder.Configuration.GetConnectionString("OrdersDb")
     ?? throw new InvalidOperationException("Connection string 'OrdersDb' is missing");
@@ -51,6 +59,7 @@ var app = builder.Build();
 
 app.UseMiddleware<CorrelationIdMiddleware>();
 app.MapDefaultEndpoints();
+app.MapGrpcHealthChecksService();
 app.MapGrpcService<OrdersGrpcService>();
 
 app.Services.GetRequiredService<IMapper>().ConfigurationProvider.AssertConfigurationIsValid();

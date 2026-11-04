@@ -352,3 +352,86 @@ gRPC-агрегація в середньому на ≈ 20 % швидша. Рі
 ![Повторний запит товару без SQL-span](docs/lab06-cache-hit-trace.png)
 
 ![Метрика попадань у кеш](docs/lab06-cache-metrics.png)
+
+
+## 7. Лаб. 07. Резильєнтність (Polly), бізнес-метрики та Health Checks
+
+### 7.1. Resilience клієнтів Aggregator
+Standard Resilience Handler підключено до всіх HttpClient платформи в `Platform.ServiceDefaults` (`ConfigureHttpClientDefaults`). Для клієнтів Aggregator стандартний обробник спершу прибирається (`RemoveAllResilienceHandlers`), а потім додається власний з параметрами конкретного сервісу (`Platform.Aggregator/Resilience/`), тому обробники не нашаровуються.
+
+| Параметр | orders-api | catalog-api | reviews-api |
+|---|---|---|---|
+| Критичність | критичний | критичний | некритичний |
+| Повтори (retry) | 3, від 0.5 с | 4, від 0.2 с | 1, 0.2 с |
+| Затримка | експоненційна, jitter | експоненційна, jitter | експоненційна, jitter |
+| Таймаут спроби | 3 с | 2 с | 2 с |
+| Загальний таймаут | 16 с | 15 с | 5 с |
+| Circuit breaker: FailureRatio | 0.3 | 0.3 | 0.7 |
+| Circuit breaker: MinimumThroughput | 10 | 10 | 5 |
+| Circuit breaker: SamplingDuration | 30 с | 30 с | 30 с |
+| Circuit breaker: BreakDuration | 15 с | 15 с | 30 с |
+
+Обґрунтування:
+- **orders-api** — без замовлення картку не зібрати (Aggregator повертає 503), тому кілька повторів і чутливий circuit breaker (розмикається вже за 30 % збоїв), щоб не чекати на сервіс, що систематично відмовляє.
+- **catalog-api** — без товарів картка неповна, тому найбільше повторів; повтори дешеві, бо читання ідемпотентне й кешоване (Лаб. 06), а короткий таймаут спроби (2 с) не дає одній повільній спробі з'їсти весь бюджет часу.
+- **reviews-api** — відгуки необов'язкові: Aggregator і без них повертає часткову відповідь з попередженням (Лаб. 05), тому один повтор, загальний таймаут 5 с і толерантний circuit breaker (0.7), який після розмикання довше дає сервісу відновитися (30 с).
+- MinimumThroughput зменшено зі стандартних 100 до 10 / 5, бо на навчальному стенді мало запитів і з типовим значенням ланцюг ніколи б не розімкнувся.
+- Таймаути узгоджені: `ServiceResiliencePolicy.EnsureConsistent()` під час старту перевіряє, що загальний таймаут не менший за найгірший випадок (таймаут спроби × кількість спроб + затримки) і що SamplingDuration щонайменше вдвічі довший за таймаут спроби. Deadline кожного gRPC-виклику дорівнює загальному таймауту політики.
+- HTTP-клієнти: `Retry.DisableForUnsafeHttpMethods()` — POST/PUT/DELETE не повторюються, щоб не створити зміни двічі.
+- gRPC-клієнти: повтори за gRPC-статусами (`Unavailable`, `ResourceExhausted`) задає `ServiceConfig` / `RetryPolicy` каналу, бо HTTP-обробник не бачить gRPC-статусів (вони приходять у трейлерах з HTTP 200). Щоб повтори не множилися, для gRPC-клієнтів повтори HTTP-рівня вимкнено, а circuit breaker і таймаути лишаються.
+- Переходи circuit breaker логуються: `OnOpened` — Error, `OnHalfOpened` — Warning, `OnClosed` — Information; кожен повтор — Warning.
+
+Graceful degradation Redis: усі операції з кешем у `Caching/` (Лаб. 06) і в Aggregator виконуються в `try/catch`; збій Redis записується в лог (`Redis is unavailable, ... is read from the database`), а запит обслуговується з бази даних.
+
+![Події Polly в метриках](docs/lab07-polly-events.png)
+
+![Переходи circuit breaker у логах](docs/lab07-circuit-opened-log.png)
+
+### 7.2. Бізнес-метрики
+Класи метрик (`Orders.Api/Metrics/OrderMetrics.cs`, `Catalog.Api/Metrics/CatalogMetrics.cs`) створюють Meter через `IMeterFactory` і зареєстровані як Singleton; Meter-и `Orders.Api`, `Catalog.Api`, `Cosmetics.Cache` і `Polly` додано в ServiceDefaults.
+
+| Meter | Інструмент | Тип | Теги |
+|---|---|---|---|
+| Orders.Api | `orders.created` | Counter | `order.status` |
+| Orders.Api | `orders.confirmed`, `orders.deleted` | Counter | — |
+| Orders.Api | `orders.status_changed` | Counter | `order.status` |
+| Orders.Api | `orders.operation.duration` | Histogram, мс | `operation`, `status` (success / failure) |
+| Orders.Api | `orders.awaiting_confirmation` | Gauge | — |
+| Orders.Api | `orders.operations.active` | Gauge | — |
+| Catalog.Api | `products.created` | Counter | `product.active` |
+| Catalog.Api | `products.price_changed` | Counter | `price.direction` (up / down / same) |
+| Catalog.Api | `products.stock_changed` | Counter | `stock.change` (added / removed) |
+| Catalog.Api | `catalog.operation.duration` | Histogram, мс | `operation`, `status` |
+| Catalog.Api | `catalog.products.low_stock` | Gauge | — |
+| Catalog.Api | `catalog.operations.active` | Gauge | — |
+
+Тривалість записується для всіх операцій, включно з невдалими. Значення тегів — лише з коротких фіксованих списків; ідентифікаторів користувачів, замовлень чи товарів у тегах немає, тож кардинальність низька. Gauge `orders.awaiting_confirmation` і `catalog.products.low_stock` оновлюють фонові сервіси раз на 15 / 30 с легким запитом до БД.
+
+![orders.created](docs/lab07-business-metrics.png)
+
+![orders.operation.duration](docs/lab07-operation-duration.png)
+
+### 7.3. Health checks
+
+| Сервіс | Перевірки | Статус збою |
+|---|---|---|
+| orders-api | `orders-db` (SQL Server, `SELECT 1`), `redis-cache` | Unhealthy / Degraded |
+| catalog-api | `catalog-db` (SQL Server, `SELECT 1`), `redis-cache` | Unhealthy / Degraded |
+| reviews-api | `reviews-db` (MongoDB, ping), `redis-cache` | Unhealthy / Degraded |
+| aggregator | `orders-api`, `catalog-api`, `reviews-api` (gRPC Health Checking Protocol, дедлайн 2 с), `redis-cache` | Unhealthy, Unhealthy, Degraded / Degraded |
+
+Endpoints кожного сервісу (доступні не лише в Development):
+
+| Endpoint | Що перевіряє |
+|---|---|
+| `/health/live` | лише процес (тег `live`), без зовнішніх залежностей |
+| `/health/ready` | залежності з тегом `ready`: бази, Redis, gRPC-сервіси; JSON з деталями кожної перевірки |
+| `/health` | усі перевірки; його використовує AppHost (`WithHttpHealthCheck("/health")`) |
+
+Redis має статус Degraded, бо кеш необов'язковий: сервіс працює далі, читаючи з бази. Для reviews-api в Aggregator статус збою також Degraded — без відгуків картка замовлення все одно збирається. Мікросервіси відповідають на стандартний gRPC Health Checking Protocol (`AddGrpcHealthChecks`, `MapGrpcHealthChecksService`).
+
+Перевірки: при зупиненому Redis `/health/ready` повертає Degraded, а сервіс продовжує відповідати; при зупиненому SQL Server `/health/live` відповідає 200, а `/health/ready` — 503.
+
+![/health/ready з Degraded](docs/lab07-health-ready-degraded.png)
+
+![Стан ресурсів у Dashboard](docs/lab07-resources-health.png)

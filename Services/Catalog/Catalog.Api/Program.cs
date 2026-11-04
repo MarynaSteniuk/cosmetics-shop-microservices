@@ -1,6 +1,8 @@
 using AutoMapper;
 using Catalog.Api.ErrorHandling;
 using Catalog.Api.Grpc;
+using Catalog.Api.HealthChecks;
+using Catalog.Api.Metrics;
 using Catalog.Bll.Caching;
 using Catalog.Bll.Mapping;
 using Catalog.Bll.Services;
@@ -19,13 +21,19 @@ var builder = WebApplication.CreateBuilder(args);
 builder.AddServiceDefaults();
 
 builder.Services.AddMemoryCache(options => options.SizeLimit = 10_000);
-builder.AddRedisDistributedCache("redis");
+builder.AddRedisDistributedCache("redis", settings => settings.DisableHealthChecks = true);
 
 builder.WebHost.ConfigureKestrel(options =>
     options.ConfigureEndpointDefaults(endpoint => endpoint.Protocols = HttpProtocols.Http1AndHttp2));
 builder.Services.AddGrpc(options => options.Interceptors.Add<GrpcServerLoggingInterceptor>());
+builder.Services.AddGrpcHealthChecks();
+
+builder.Services.AddCatalogHealthChecks(builder.Configuration);
 builder.Services.AddSingleton<CacheMetrics>();
 builder.Services.AddSingleton<ITwoLevelCache, TwoLevelCache>();
+
+builder.Services.AddSingleton<CatalogMetrics>();
+builder.Services.AddHostedService<CatalogMetricsSnapshotService>();
 
 var connectionString = builder.Configuration.GetConnectionString("CatalogDb")
     ?? throw new InvalidOperationException("Connection string 'CatalogDb' is missing");
@@ -68,6 +76,7 @@ using (var scope = app.Services.CreateScope())
 
 app.UseMiddleware<CorrelationIdMiddleware>();
 app.MapDefaultEndpoints();
+app.MapGrpcHealthChecksService();
 app.MapGrpcService<CatalogGrpcService>();
 app.UseExceptionHandler();
 app.UseStatusCodePages();

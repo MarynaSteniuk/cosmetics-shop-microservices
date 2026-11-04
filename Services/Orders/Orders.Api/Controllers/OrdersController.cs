@@ -1,5 +1,6 @@
 using System.ComponentModel.DataAnnotations;
 using Microsoft.AspNetCore.Mvc;
+using Orders.Api.Metrics;
 using Orders.Bll.Dtos;
 using Orders.Bll.Services;
 
@@ -11,10 +12,12 @@ namespace Orders.Api.Controllers;
 public class OrdersController : ControllerBase
 {
     private readonly IOrderService _orders;
+    private readonly OrderMetrics _metrics;
 
-    public OrdersController(IOrderService orders)
+    public OrdersController(IOrderService orders, OrderMetrics metrics)
     {
         _orders = orders;
+        _metrics = metrics;
     }
 
     [HttpGet]
@@ -29,7 +32,7 @@ public class OrdersController : ControllerBase
     [ProducesResponseType<OrderDto>(StatusCodes.Status200OK)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
     public async Task<ActionResult<OrderDto>> GetById(long id, CancellationToken ct)
-        => Ok(await _orders.GetByIdAsync(id, ct));
+        => Ok(await _metrics.MeasureAsync("get", () => _orders.GetByIdAsync(id, ct)));
 
     [HttpPost]
     [ProducesResponseType<OrderDto>(StatusCodes.Status201Created)]
@@ -38,7 +41,8 @@ public class OrdersController : ControllerBase
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict)]
     public async Task<ActionResult<OrderDto>> Create(CreateOrderDto input, CancellationToken ct)
     {
-        var created = await _orders.CreateAsync(input, ct);
+        var created = await _metrics.MeasureAsync("create", () => _orders.CreateAsync(input, ct));
+        _metrics.OrderCreated(created.Status);
         return CreatedAtAction(nameof(GetById), new { id = created.Id }, created);
     }
 
@@ -48,7 +52,8 @@ public class OrdersController : ControllerBase
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict)]
     public async Task<IActionResult> Confirm(long id, CancellationToken ct)
     {
-        await _orders.ConfirmAsync(id, ct);
+        await _metrics.MeasureAsync("confirm", () => _orders.ConfirmAsync(id, ct));
+        _metrics.OrderConfirmed();
         return NoContent();
     }
 
@@ -58,7 +63,11 @@ public class OrdersController : ControllerBase
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict)]
     public async Task<ActionResult<OrderDto>> ChangeStatus(long id, ChangeOrderStatusDto input, CancellationToken ct)
-        => Ok(await _orders.ChangeStatusAsync(id, input, ct));
+    {
+        var order = await _metrics.MeasureAsync("change_status", () => _orders.ChangeStatusAsync(id, input, ct));
+        _metrics.StatusChanged(order.Status);
+        return Ok(order);
+    }
 
     [HttpDelete("{id:long}")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
@@ -66,7 +75,8 @@ public class OrdersController : ControllerBase
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict)]
     public async Task<IActionResult> Delete(long id, CancellationToken ct)
     {
-        await _orders.DeleteAsync(id, ct);
+        await _metrics.MeasureAsync("delete", () => _orders.DeleteAsync(id, ct));
+        _metrics.OrderDeleted();
         return NoContent();
     }
 }

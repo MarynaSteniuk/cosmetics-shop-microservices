@@ -101,6 +101,14 @@ ORDER BY OrderDate DESC";
         return rows.AsList();
     }
 
+    public async Task<int> CountByStatusAsync(string status, CancellationToken ct = default)
+    {
+        const string sql = "SELECT COUNT(*) FROM dbo.Orders WHERE Status = @Status AND IsDeleted = 0";
+
+        await EnsureOpenAsync(ct);
+        return await Connection.ExecuteScalarAsync<int>(Command(sql, new { Status = status }, ct));
+    }
+
     public async Task<PromoCode?> FindActivePromoCodeAsync(string code, CancellationToken ct = default)
     {
         const string sql = @"

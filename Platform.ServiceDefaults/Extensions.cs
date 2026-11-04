@@ -9,6 +9,7 @@ using OpenTelemetry.Metrics;
 using OpenTelemetry.Resources;
 using OpenTelemetry.Trace;
 using Platform.ServiceDefaults.Correlation;
+using Platform.ServiceDefaults.HealthChecks;
 using Platform.ServiceDefaults.Logging;
 using Platform.ServiceDefaults.Telemetry;
 using Serilog;
@@ -21,6 +22,10 @@ public static class Extensions
 {
     private const string HealthEndpointPath = "/health";
     private const string AlivenessEndpointPath = "/alive";
+    private const string LivenessEndpointPath = "/health/live";
+    private const string ReadinessEndpointPath = "/health/ready";
+    public const string LiveTag = "live";
+    public const string ReadyTag = "ready";
 
     public static TBuilder AddServiceDefaults<TBuilder>(this TBuilder builder) where TBuilder : IHostApplicationBuilder
     {
@@ -87,7 +92,7 @@ public static class Extensions
                 .AddAspNetCoreInstrumentation()
                 .AddHttpClientInstrumentation()
                 .AddRuntimeInstrumentation()
-                .AddMeter("Cosmetics.Cache"))
+                .AddMeter("Cosmetics.Cache", "Orders.Api", "Catalog.Api", "Polly"))
             .WithTracing(tracing => tracing
                 .SetSampler(CreateSampler(builder))
                 .AddSource(builder.Environment.ApplicationName)
@@ -127,17 +132,33 @@ public static class Extensions
     public static TBuilder AddDefaultHealthChecks<TBuilder>(this TBuilder builder) where TBuilder : IHostApplicationBuilder
     {
         builder.Services.AddHealthChecks()
-            .AddCheck("self", () => HealthCheckResult.Healthy(), ["live"]);
+            .AddCheck("self", () => HealthCheckResult.Healthy("Process is running"), [LiveTag]);
 
         return builder;
     }
 
     public static WebApplication MapDefaultEndpoints(this WebApplication app)
     {
-        app.MapHealthChecks(HealthEndpointPath);
+        app.MapHealthChecks(HealthEndpointPath, new HealthCheckOptions
+        {
+            ResponseWriter = HealthCheckResponseWriter.WriteJsonAsync
+        });
+
         app.MapHealthChecks(AlivenessEndpointPath, new HealthCheckOptions
         {
-            Predicate = registration => registration.Tags.Contains("live")
+            Predicate = registration => registration.Tags.Contains(LiveTag)
+        });
+
+        app.MapHealthChecks(LivenessEndpointPath, new HealthCheckOptions
+        {
+            Predicate = registration => registration.Tags.Contains(LiveTag),
+            ResponseWriter = HealthCheckResponseWriter.WriteJsonAsync
+        });
+
+        app.MapHealthChecks(ReadinessEndpointPath, new HealthCheckOptions
+        {
+            Predicate = registration => registration.Tags.Contains(ReadyTag),
+            ResponseWriter = HealthCheckResponseWriter.WriteJsonAsync
         });
 
         return app;

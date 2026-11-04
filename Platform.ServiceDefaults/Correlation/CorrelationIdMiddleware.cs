@@ -20,6 +20,12 @@ public sealed class CorrelationIdMiddleware
 
     public async Task InvokeAsync(HttpContext context)
     {
+        if (IsHealthProbe(context.Request.Path))
+        {
+            await _next(context);
+            return;
+        }
+
         var generated = false;
 
         if (!context.Request.Headers.TryGetValue(HeaderName, out var value) || string.IsNullOrWhiteSpace(value))
@@ -48,4 +54,7 @@ public sealed class CorrelationIdMiddleware
                 context.Request.Method, context.Request.Path, context.Response.StatusCode, stopwatch.ElapsedMilliseconds);
         }
     }
+
+    private static bool IsHealthProbe(PathString path)
+        => path.StartsWithSegments("/health") || path.StartsWithSegments("/alive");
 }

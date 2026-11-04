@@ -12,4 +12,5 @@ public interface IOrderRepository : IGenericRepository<Order>
     Task AddStatusHistoryAsync(long orderId, string? oldStatus, string newStatus, string? changedBy, CancellationToken ct = default);
     Task ChangeStatusAsync(long orderId, string newStatus, string? changedBy, CancellationToken ct = default);
     Task ConfirmAsync(long orderId, string? changedBy, CancellationToken ct = default);
+    Task<int> CountByStatusAsync(string status, CancellationToken ct = default);
 }

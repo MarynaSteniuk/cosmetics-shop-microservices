@@ -38,6 +38,9 @@ public sealed class OrderService : IOrderService
                }, ct)
            ?? throw new NotFoundException($"Order {id} not found");
 
+    public Task<int> CountByStatusAsync(string status, CancellationToken ct = default)
+        => _uow.Orders.CountByStatusAsync(status, ct);
+
     public async Task<IReadOnlyList<OrderSummaryDto>> GetByCustomerAsync(long customerId, string? status,
         CancellationToken ct = default)
     {

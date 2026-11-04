@@ -6,6 +6,7 @@ using Microsoft.Extensions.Caching.Distributed;
 using Orders.Grpc;
 using Platform.Aggregator.Caching;
 using Platform.Aggregator.Contracts;
+using Platform.Aggregator.Resilience;
 using Platform.Aggregator.Telemetry;
 using Reviews.Grpc;
 
@@ -17,7 +18,6 @@ public sealed class GrpcOrderAggregationService : IOrderAggregationService
     private const string CatalogServiceName = "catalog-api";
     private const string ReviewsServiceName = "reviews-api";
     private const int LatestReviewsCount = 3;
-    private static readonly TimeSpan CallDeadline = TimeSpan.FromSeconds(5);
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
     private readonly OrdersService.OrdersServiceClient _orders;
@@ -78,7 +78,7 @@ public sealed class GrpcOrderAggregationService : IOrderAggregationService
         {
             order = await CallAsync(OrdersServiceName, $"order {orderId}",
                 () => _orders.GetOrderAsync(new GetOrderRequest { Id = orderId },
-                    deadline: Deadline(), cancellationToken: ct).ResponseAsync);
+                    deadline: GrpcRetryPolicies.DeadlineFor(ResiliencePolicies.Orders), cancellationToken: ct).ResponseAsync);
         }
         catch (RpcException ex) when (ex.StatusCode == StatusCode.NotFound)
         {
@@ -96,13 +96,13 @@ public sealed class GrpcOrderAggregationService : IOrderAggregationService
 
         var productsTask = SafeCallAsync(CatalogServiceName, productsLabel,
             () => _catalog.GetProductsByIdsAsync(new GetProductsByIdsRequest { Ids = { productIds } },
-                deadline: Deadline(), cancellationToken: ct).ResponseAsync,
+                deadline: GrpcRetryPolicies.DeadlineFor(ResiliencePolicies.Catalog), cancellationToken: ct).ResponseAsync,
             warnings, ct);
 
         var reviewsTask = SafeCallAsync(ReviewsServiceName, productsLabel,
             () => _reviews.GetReviewsSummaryForProductsAsync(
                 new GetReviewsSummaryRequest { ProductIds = { productIds }, LatestCount = LatestReviewsCount },
-                deadline: Deadline(), cancellationToken: ct).ResponseAsync,
+                deadline: GrpcRetryPolicies.DeadlineFor(ResiliencePolicies.Reviews), cancellationToken: ct).ResponseAsync,
             warnings, ct);
 
         await Task.WhenAll(productsTask, reviewsTask);
@@ -180,8 +180,6 @@ public sealed class GrpcOrderAggregationService : IOrderAggregationService
     private static bool IsDependencyFailure(RpcException ex, CancellationToken ct)
         => ex.StatusCode is StatusCode.Unavailable or StatusCode.DeadlineExceeded or StatusCode.Internal
            || (ex.StatusCode == StatusCode.Cancelled && !ct.IsCancellationRequested);
-
-    private static DateTime Deadline() => DateTime.UtcNow.Add(CallDeadline);
 
     private static decimal ToMoney(double value) => Math.Round((decimal)value, 2);
 
