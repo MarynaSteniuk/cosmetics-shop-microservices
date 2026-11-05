@@ -28,8 +28,7 @@ builder.Services.AddOrdersHealthChecks(builder.Configuration);
 builder.Services.AddSingleton<CacheMetrics>();
 builder.Services.AddSingleton<ITwoLevelCache, TwoLevelCache>();
 
-builder.Services.AddSingleton<OrderMetrics>();
-builder.Services.AddHostedService<OrdersMetricsSnapshotService>();
+builder.Services.AddOrderMetrics();
 
 var connectionString = builder.Configuration.GetConnectionString("OrdersDb")
     ?? throw new InvalidOperationException("Connection string 'OrdersDb' is missing");

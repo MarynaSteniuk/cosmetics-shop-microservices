@@ -32,8 +32,7 @@ builder.Services.AddCatalogHealthChecks(builder.Configuration);
 builder.Services.AddSingleton<CacheMetrics>();
 builder.Services.AddSingleton<ITwoLevelCache, TwoLevelCache>();
 
-builder.Services.AddSingleton<CatalogMetrics>();
-builder.Services.AddHostedService<CatalogMetricsSnapshotService>();
+builder.Services.AddCatalogMetrics();
 
 var connectionString = builder.Configuration.GetConnectionString("CatalogDb")
     ?? throw new InvalidOperationException("Connection string 'CatalogDb' is missing");
