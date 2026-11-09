@@ -10,6 +10,7 @@ using Reviews.Infrastructure;
 using Reviews.WebApi.ErrorHandling;
 using Reviews.WebApi.Grpc;
 using Reviews.WebApi.HealthChecks;
+using Reviews.WebApi.IntegrationEvents;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -24,6 +25,9 @@ builder.Services.AddGrpc(options => options.Interceptors.Add<GrpcServerLoggingIn
 builder.Services.AddGrpcHealthChecks();
 
 builder.Services.AddReviewsHealthChecks(builder.Configuration);
+
+builder.AddRabbitMQClient("messaging");
+builder.Services.AddReviewsIntegrationEvents();
 
 builder.Services
     .AddApplication(builder.Configuration)

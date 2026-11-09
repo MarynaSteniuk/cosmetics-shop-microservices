@@ -98,6 +98,7 @@ public static class Extensions
                 .AddSource(builder.Environment.ApplicationName)
                 .AddSource(PlatformTelemetry.BusinessSourcesPattern)
                 .AddSource(PlatformTelemetry.MongoDbSourceName)
+                .AddSource("Platform.Messaging")
                 .AddSource("Yarp.ReverseProxy")
                 .AddAspNetCoreInstrumentation(options => options.Filter = context =>
                     !context.Request.Path.StartsWithSegments(HealthEndpointPath)

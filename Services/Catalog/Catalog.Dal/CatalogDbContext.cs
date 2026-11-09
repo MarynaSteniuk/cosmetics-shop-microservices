@@ -13,6 +13,7 @@ public class CatalogDbContext : DbContext
     public DbSet<ProductDetail> ProductDetails => Set<ProductDetail>();
     public DbSet<ProductImage> ProductImages => Set<ProductImage>();
     public DbSet<ProductCategory> ProductCategories => Set<ProductCategory>();
+    public DbSet<ProcessedEvent> ProcessedEvents => Set<ProcessedEvent>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
         => modelBuilder.ApplyConfigurationsFromAssembly(typeof(CatalogDbContext).Assembly);

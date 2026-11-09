@@ -1,6 +1,7 @@
 using AutoMapper;
 using Catalog.Bll.Caching;
 using Catalog.Bll.Dtos;
+using Catalog.Bll.Events;
 using Catalog.Bll.Queries;
 using Catalog.Bll.Specifications;
 using Catalog.Bll.Telemetry;
@@ -16,13 +17,16 @@ public sealed class ProductService : IProductService
     private readonly IUnitOfWork _uow;
     private readonly IMapper _mapper;
     private readonly ITwoLevelCache _cache;
+    private readonly IProductEventsPublisher _events;
     private readonly ILogger<ProductService> _logger;
 
-    public ProductService(IUnitOfWork uow, IMapper mapper, ITwoLevelCache cache, ILogger<ProductService> logger)
+    public ProductService(IUnitOfWork uow, IMapper mapper, ITwoLevelCache cache, IProductEventsPublisher events,
+        ILogger<ProductService> logger)
     {
         _uow = uow;
         _mapper = mapper;
         _cache = cache;
+        _events = events;
         _logger = logger;
     }
 
@@ -133,6 +137,31 @@ public sealed class ProductService : IProductService
             id, oldPrice, input.Price);
 
         await InvalidateProductAsync(product, "ProductPriceChanged", ct);
+
+        await _events.PriceChangedAsync(product.Id, product.Sku, product.Name, oldPrice, product.Price,
+            product.UpdatedAt ?? DateTime.UtcNow, ct);
+
+        return await GetByIdAsync(id, ct);
+    }
+
+    public async Task<ProductDto> RenameAsync(long id, RenameProductDto input, CancellationToken ct = default)
+    {
+        using var activity = CatalogTelemetry.Source.StartActivity("RenameProduct");
+        activity?.SetTag("product.id", id);
+
+        var product = await FindAsync(id, ct);
+        var oldName = product.Name;
+
+        product.Rename(input.Name);
+        await _uow.SaveChangesAsync(ct);
+
+        _logger.LogInformation("Product {ProductId} renamed from {OldName} to {NewName}", id, oldName, product.Name);
+
+        await InvalidateProductAsync(product, "ProductRenamed", ct);
+
+        await _events.RenamedAsync(product.Id, product.Sku, oldName, product.Name,
+            product.UpdatedAt ?? DateTime.UtcNow, ct);
+
         return await GetByIdAsync(id, ct);
     }
 

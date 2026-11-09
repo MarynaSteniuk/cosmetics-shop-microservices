@@ -1,14 +1,15 @@
-using System.Data;
-using System.Diagnostics;
 using AutoMapper;
 using Microsoft.Extensions.Logging;
 using Orders.Bll.Caching;
 using Orders.Bll.Dtos;
+using Orders.Bll.Events;
 using Orders.Bll.Telemetry;
 using Orders.Dal.Interfaces;
-using Orders.Domain;
 using Orders.Domain.Exceptions;
 using Orders.Domain.Models;
+using Orders.Domain;
+using System.Data;
+using System.Diagnostics;
 
 namespace Orders.Bll.Services;
 
@@ -19,10 +20,13 @@ public sealed class OrderService : IOrderService
     private readonly IUnitOfWork _uow;
     private readonly IMapper _mapper;
     private readonly ITwoLevelCache _cache;
+    private readonly IOrderEventsPublisher _events;
     private readonly ILogger<OrderService> _logger;
 
-    public OrderService(IUnitOfWork uow, IMapper mapper, ITwoLevelCache cache, ILogger<OrderService> logger)
+    public OrderService(IUnitOfWork uow, IMapper mapper, ITwoLevelCache cache, IOrderEventsPublisher events,
+        ILogger<OrderService> logger)
     {
+        _events = events;
         _uow = uow;
         _mapper = mapper;
         _cache = cache;
@@ -152,6 +156,8 @@ public sealed class OrderService : IOrderService
         activity?.SetTag("order.id", id);
 
         var itemsCount = 0;
+        long customerId = 0;
+        IReadOnlyList<OrderStockLine> stockLines = [];
 
         await _uow.BeginTransactionAsync(IsolationLevel.ReadCommitted, ct);
         try
@@ -163,6 +169,8 @@ public sealed class OrderService : IOrderService
                 throw new BusinessConflictException($"Order {id} has no items");
 
             itemsCount = order.Items.Count;
+            customerId = order.CustomerId;
+            stockLines = order.Items.Select(i => new OrderStockLine(i.ProductId, i.Units)).ToList();
 
             await _uow.Orders.ConfirmAsync(id, Actor, ct);
 
@@ -183,6 +191,8 @@ public sealed class OrderService : IOrderService
             id, itemsCount, OrderStatuses.StockConfirmed);
 
         await _cache.InvalidateAsync([OrdersCacheKeys.Order(id), OrdersCacheKeys.AggregatedOrder(id)], "OrderConfirmed", ct);
+
+        await _events.StockConfirmedAsync(id, customerId, stockLines, DateTime.UtcNow, ct);
     }
 
     public async Task<OrderDto> ChangeStatusAsync(long id, ChangeOrderStatusDto input, CancellationToken ct = default)

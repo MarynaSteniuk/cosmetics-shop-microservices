@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Server.Kestrel.Core;
 using Orders.Api.ErrorHandling;
 using Orders.Api.Grpc;
 using Orders.Api.HealthChecks;
+using Orders.Api.IntegrationEvents;
 using Orders.Api.Metrics;
 using Orders.Bll.Caching;
 using Orders.Bll.Mapping;
@@ -34,6 +35,10 @@ var connectionString = builder.Configuration.GetConnectionString("OrdersDb")
     ?? throw new InvalidOperationException("Connection string 'OrdersDb' is missing");
 
 builder.Services.AddScoped<IUnitOfWork>(_ => new UnitOfWork(connectionString));
+
+builder.AddRabbitMQClient("messaging");
+builder.Services.AddEventPublisher();
+builder.Services.AddOrdersIntegrationEvents();
 builder.Services.AddScoped<ICustomerService, CustomerService>();
 builder.Services.AddScoped<IProductService, ProductService>();
 builder.Services.AddScoped<IOrderService, OrderService>();

@@ -435,3 +435,58 @@ Redis має статус Degraded, бо кеш необов'язковий: с�
 ![/health/ready з Degraded](docs/lab07-health-ready-degraded.png)
 
 ![Стан ресурсів у Dashboard](docs/lab07-resources-health.png)
+
+
+## 8. Лаб. 08. Подієва мікросервісна архітектура з RabbitMQ
+
+### 8.1. Що реалізовано
+Політика дублювання з Лаб. 01 («оновлюється, коли Каталог надсилає подію») реалізована через RabbitMQ:
+- Каталог публікує `ProductPriceChangedEvent` і `ProductRenamedEvent` → orders-api оновлює локальний довідник `dbo.Products` (Name, Price), reviews-api — `productName` в усіх відгуках і обговореннях товару. Ціни й назви в оформлених замовленнях (`OrderItems`) не змінюються — це знімок на момент покупки.
+- Замовлення після підтвердження публікують `OrderStockConfirmedEvent` → Каталог зменшує залишок товарів.
+
+Спільна бібліотека `Platform.EventBus` (RabbitMQ.Client 7.x, підключення через `Aspire.RabbitMQ.Client` — `builder.AddRabbitMQClient("messaging")`) містить базовий тип подій, топологію, publisher, базовий consumer, повтори й трасування. Контракти подій кожен сервіс тримає у своїй папці `IntegrationEvents/Events`.
+
+### 8.2. Топологія
+RabbitMQ запускається в AppHost: `AddRabbitMQ("messaging").WithDataVolume(...).WithManagementPlugin()`. Топологія оголошується в коді під час старту кожного споживача (повторне оголошення безпечне):
+
+| Exchange (topic, durable) | Черга (durable) | Binding | Споживач | DLX (direct) → DLQ |
+|---|---|---|---|---|
+| `catalog-events` | `orders.catalog-sync` | `product.*` | orders-api | `catalog-events.dlx` → `orders.catalog-sync.dlq` |
+| `catalog-events` | `reviews.catalog-sync` | `product.*` | reviews-api | `catalog-events.dlx` → `reviews.catalog-sync.dlq` |
+| `orders-events` | `catalog.orders-sync` | `order.stock_confirmed` | catalog-api | `orders-events.dlx` → `catalog.orders-sync.dlq` |
+
+Кожна черга має аргументи `x-dead-letter-exchange` і `x-dead-letter-routing-key` = назва черги, тому відхилене повідомлення потрапляє лише у DLQ свого сервісу.
+
+![Exchanges](docs/lab08-rabbitmq-exchanges.png)
+
+![Черги](docs/lab08-rabbitmq-queues.png)
+
+### 8.3. Події та публікація
+- Базовий `abstract record IntegrationEvent`: `EventId`, `OccurredAt`, `CorrelationId`, `SchemaVersion`; події незмінні (`sealed record`), названі в минулому часі й самодостатні (споживачу не потрібно звертатися до Каталогу).
+- `RabbitMqEventPublisher`: JSON (System.Text.Json, camelCase), `Persistent`, `ContentType = application/json`, `MessageId = EventId`, `Type` = тип події, заголовки `x-correlation-id`, `x-event-type`, `x-schema-version`, W3C `traceparent`; кожна публікація логується.
+- Подія публікується лише після успішного збереження: `SaveChanges` / `Commit` → інвалідація кешу → `PublishAsync` (`ProductService.ChangePriceAsync`, `RenameAsync`, `OrderService.ConfirmAsync`). Якщо транзакція не вдалася, подія не публікується. Якщо зміна збережена, а брокер недоступний, це логується як Error; повну гарантію доставки дав би Transactional Outbox (не реалізовано).
+
+### 8.4. Споживання, ідемпотентність, повтори
+- `RabbitMqConsumer` — `BackgroundService`: власний канал, оголошення топології, `BasicQosAsync(prefetchCount: 10)`, `AsyncEventingBasicConsumer`, `BasicConsumeAsync(autoAck: false)`, зупинка за `stoppingToken`; кожне повідомлення обробляється в окремому DI-scope обробником свого типу.
+- Успіх → `BasicAckAsync`. Некоректний JSON, невідомий тип, несумісна версія схеми або бізнес-помилка → `BasicNackAsync(requeue: false)` → одразу DLQ.
+- Тимчасовий збій (наприклад, недоступна БД) → повідомлення публікується повторно в ту саму чергу зі збільшеним `x-retry-count` (пауза 1, 2, 4 с), оригінал підтверджується; після 3 повторів → DLQ.
+- Ідемпотентність:
+  - orders-api: таблиця `dbo.ProcessedEvents` (EventId — первинний ключ, скрипт `db/p1/003_integration_events.sql`); запис EventId і оновлення товару — в одній транзакції; дублікат (помилка 2627) пропускається;
+  - catalog-api: таблиця `ProcessedEvents` (EF-міграція `AddProcessedEvents`); EventId і зменшення залишку зберігаються одним `SaveChanges`;
+  - reviews-api: колекція `processed_events` (унікальний `_id` = EventId). MongoDB у контейнері Aspire працює без replica set, тому транзакцій немає: EventId записується першим, а якщо оновлення не вдалося, запис видаляється, щоб повтор зміг застосувати подію.
+- Захист від подій, що прийшли пізніше (out-of-order): orders-api зберігає `CatalogNameSyncedAt` і `CatalogPriceSyncedAt`, reviews-api — колекцію `product_name_sync`; старіша подія не перезаписує новіші дані.
+
+![Повідомлення в DLQ](docs/lab08-dlq-message.png)
+
+### 8.5. Трасування й логування
+- Publisher створює Activity типу Producer і записує W3C `traceparent` у заголовки повідомлення; consumer відновлює контекст і створює Activity типу Consumer з тегами `messaging.system`, `messaging.destination.name`, `messaging.message.id`, `messaging.event.type`. ActivitySource `Platform.Messaging` додано в ServiceDefaults.
+- Логи обробки виконуються в log-scope з `EventId`, `EventType`, `CorrelationId`, `Queue`, `RetryCount`; помилки логуються з повним stack trace і бізнес-контекстом (ProductId, OrderId).
+
+![Наскрізний trace HTTP → Publish → Consume → DB](docs/lab08-trace.png)
+
+### 8.6. Перевірка
+1. Змінити ціну товару: `PUT /api/products/1/price` у catalog-api → за кілька секунд нова ціна в `GET /api/products/1` orders-api; ціни в `GET /api/orders/1` не змінюються.
+2. Перейменувати товар: `PUT /api/products/1/name` → нова назва в `GET /api/reviews?productId=1`.
+3. Дублікат: опублікувати те саме повідомлення з тим самим EventId через Management UI → у логах `Duplicate ... skipped`.
+4. Зупинити orders-api, змінити кілька цін, запустити знову → усі події з черги обробляються.
+5. Надіслати в `orders.catalog-sync` повідомлення з некоректним JSON → воно потрапляє в `orders.catalog-sync.dlq`.

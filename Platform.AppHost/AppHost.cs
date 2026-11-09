@@ -7,7 +7,7 @@ var sql = builder.AddSqlServer("sql", sqlPassword, port: 14333)
 
 var ordersScript = string.Join(
     $"{Environment.NewLine}GO{Environment.NewLine}",
-    new[] { "schema.sql", "procedures.sql", "seed.sql", "002_confirm_order.sql" }
+    new[] { "schema.sql", "procedures.sql", "seed.sql", "002_confirm_order.sql", "003_integration_events.sql" }
         .Select(file => File.ReadAllText(Path.Combine(builder.AppHostDirectory, "..", "db", "p1", file))));
 
 var ordersDb = sql.AddDatabase("OrdersDb", "CosmeticsOrdersDb")
@@ -24,11 +24,17 @@ var reviewsDb = mongo.AddDatabase("ReviewsDb", "cosmetics_reviews");
 var redis = builder.AddRedis("redis")
     .WithDataVolume("cosmetics-redis-data");
 
+var messaging = builder.AddRabbitMQ("messaging")
+    .WithDataVolume("cosmetics-rabbitmq-data")
+    .WithManagementPlugin();
+
 var orders = builder.AddProject<Projects.Orders_Api>("orders-api")
     .WithReference(ordersDb)
     .WaitFor(ordersDb)
     .WithReference(redis)
     .WaitFor(redis)
+    .WithReference(messaging)
+    .WaitFor(messaging)
     .WithHttpHealthCheck("/health");
 
 var catalog = builder.AddProject<Projects.Catalog_Api>("catalog-api")
@@ -36,6 +42,8 @@ var catalog = builder.AddProject<Projects.Catalog_Api>("catalog-api")
     .WaitFor(catalogDb)
     .WithReference(redis)
     .WaitFor(redis)
+    .WithReference(messaging)
+    .WaitFor(messaging)
     .WithHttpHealthCheck("/health");
 
 var reviews = builder.AddProject<Projects.Reviews_WebApi>("reviews-api")
@@ -43,6 +51,8 @@ var reviews = builder.AddProject<Projects.Reviews_WebApi>("reviews-api")
     .WaitFor(reviewsDb)
     .WithReference(redis)
     .WaitFor(redis)
+    .WithReference(messaging)
+    .WaitFor(messaging)
     .WithHttpHealthCheck("/health");
 
 var aggregator = builder.AddProject<Projects.Platform_Aggregator>("aggregator")

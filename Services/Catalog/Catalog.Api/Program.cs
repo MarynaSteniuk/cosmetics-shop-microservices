@@ -2,6 +2,7 @@ using AutoMapper;
 using Catalog.Api.ErrorHandling;
 using Catalog.Api.Grpc;
 using Catalog.Api.HealthChecks;
+using Catalog.Api.IntegrationEvents;
 using Catalog.Api.Metrics;
 using Catalog.Bll.Caching;
 using Catalog.Bll.Mapping;
@@ -40,6 +41,10 @@ var connectionString = builder.Configuration.GetConnectionString("CatalogDb")
 builder.Services.AddDbContext<CatalogDbContext>(options => options.UseSqlServer(connectionString));
 builder.Services.AddScoped<IUnitOfWork, UnitOfWork>();
 builder.Services.AddScoped<IProductService, ProductService>();
+
+builder.AddRabbitMQClient("messaging");
+builder.Services.AddEventPublisher();
+builder.Services.AddCatalogIntegrationEvents();
 builder.Services.AddScoped<ICategoryService, CategoryService>();
 
 builder.Services.AddAutoMapper(cfg =>

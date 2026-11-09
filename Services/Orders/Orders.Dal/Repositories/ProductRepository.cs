@@ -66,4 +66,46 @@ public sealed class ProductRepository : BaseDapperRepository<Product>, IProductR
         if (affected == 0)
             throw new BusinessConflictException($"Not enough stock for product {productId}");
     }
+
+    public async Task<CatalogSyncResult> ApplyCatalogChangeAsync(long productId, string name, decimal? price,
+        DateTime changedAt, CancellationToken ct = default)
+    {
+        const string update = """
+            UPDATE dbo.Products SET
+                Name = CASE WHEN CatalogNameSyncedAt IS NULL OR CatalogNameSyncedAt < @ChangedAt
+                            THEN @Name ELSE Name END,
+                CatalogNameSyncedAt = CASE WHEN CatalogNameSyncedAt IS NULL OR CatalogNameSyncedAt < @ChangedAt
+                            THEN @ChangedAt ELSE CatalogNameSyncedAt END,
+                Price = CASE WHEN @Price IS NOT NULL AND (CatalogPriceSyncedAt IS NULL OR CatalogPriceSyncedAt < @ChangedAt)
+                            THEN @Price ELSE Price END,
+                CatalogPriceSyncedAt = CASE WHEN @Price IS NOT NULL AND (CatalogPriceSyncedAt IS NULL OR CatalogPriceSyncedAt < @ChangedAt)
+                            THEN @ChangedAt ELSE CatalogPriceSyncedAt END,
+                UpdatedAt = SYSUTCDATETIME(),
+                UpdatedBy = @Actor
+            WHERE Id = @Id AND IsDeleted = 0
+              AND (CatalogNameSyncedAt IS NULL OR CatalogNameSyncedAt < @ChangedAt
+                   OR (@Price IS NOT NULL AND (CatalogPriceSyncedAt IS NULL OR CatalogPriceSyncedAt < @ChangedAt)))
+            """;
+        const string exists = "SELECT COUNT(*) FROM dbo.Products WHERE Id = @Id";
+        const string insert = """
+            INSERT INTO dbo.Products (Id, Name, Price, Stock, CreatedBy, CatalogNameSyncedAt, CatalogPriceSyncedAt)
+            VALUES (@Id, @Name, @Price, 0, @Actor, @ChangedAt, @ChangedAt)
+            """;
+
+        var parameters = new { Id = productId, Name = name, Price = price, ChangedAt = changedAt, Actor = "catalog-sync" };
+
+        await EnsureOpenAsync(ct);
+
+        if (await Connection.ExecuteAsync(Command(update, parameters, ct)) > 0)
+            return CatalogSyncResult.Updated;
+
+        if (await Connection.ExecuteScalarAsync<int>(Command(exists, parameters, ct)) > 0)
+            return CatalogSyncResult.Stale;
+
+        if (price is null)
+            return CatalogSyncResult.NotFound;
+
+        await Connection.ExecuteAsync(Command(insert, parameters, ct));
+        return CatalogSyncResult.Inserted;
+    }
 }

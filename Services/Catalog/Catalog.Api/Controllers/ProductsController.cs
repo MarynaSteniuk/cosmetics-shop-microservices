@@ -83,6 +83,21 @@ public class ProductsController : ControllerBase
         return Ok(updated);
     }
 
+    [HttpPut("{id:long}/name")]
+    [ProducesResponseType<ProductDto>(StatusCodes.Status200OK)]
+    [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<ProductDto>> Rename(
+        long id, RenameProductDto input, [FromServices] IValidator<RenameProductDto> validator, CancellationToken ct)
+    {
+        var validation = await validator.ValidateAsync(input, ct);
+        if (!validation.IsValid)
+            return ValidationProblem(new ValidationProblemDetails(validation.ToDictionary()));
+
+        var updated = await _metrics.MeasureAsync("rename", () => _products.RenameAsync(id, input, ct));
+        return Ok(updated);
+    }
+
     [HttpPost("{id:long}/stock/add")]
     [ProducesResponseType<ProductDto>(StatusCodes.Status200OK)]
     [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest)]

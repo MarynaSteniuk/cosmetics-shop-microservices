@@ -106,3 +106,8 @@ public class StockChangeDto
     [Range(1, 10000)]
     public int Quantity { get; set; }
 }
+
+public class RenameProductDto
+{
+    public string Name { get; set; } = "";
+}
