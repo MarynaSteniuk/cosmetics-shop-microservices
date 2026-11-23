@@ -1,0 +1,17 @@
+﻿{
+    "aud":  "cosmetics-platform",
+    "iss":  "cosmetics-auth",
+    "exp":  1795464718,
+    "iat":  1795463818,
+    "nbf":  1795463818,
+    "sub":  "256cacd9-ed83-47c3-b844-55d7cde64376",
+    "jti":  "f2425c21-6055-437c-b1a9-ce7d40bd1ce6",
+    "unique_name":  "admin@cosmetics.local",
+    "email":  "admin@cosmetics.local",
+    "email_verified":  true,
+    "name":  "Platform Admin",
+    "role":  [
+                 "User",
+                 "Admin"
+             ]
+}

@@ -12,6 +12,7 @@ public interface IProductService
     Task<ProductDto> CreateAsync(CreateProductDto input, CancellationToken ct = default);
     Task<ProductDto> ChangePriceAsync(long id, ChangePriceDto input, CancellationToken ct = default);
     Task<ProductDto> RenameAsync(long id, RenameProductDto input, CancellationToken ct = default);
+    Task<ProductDto> PublishAsync(long id, CancellationToken ct = default);
     Task<ProductDto> AddStockAsync(long id, StockChangeDto input, CancellationToken ct = default);
     Task<ProductDto> RemoveStockAsync(long id, StockChangeDto input, CancellationToken ct = default);
     Task DeleteAsync(long id, CancellationToken ct = default);

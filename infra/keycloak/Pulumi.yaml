@@ -1,0 +1,3 @@
+name: cosmetics-keycloak
+runtime: dotnet
+description: Lab 09, part 3 - Keycloak realm DevRealmDrivers for the cosmetics shop (roles, resource servers, permissions, clients, users)

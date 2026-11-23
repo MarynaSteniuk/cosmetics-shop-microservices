@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
+using Orders.Api.Authorization;
 using Orders.Bll.Dtos;
 using Orders.Bll.Services;
 
@@ -16,11 +17,13 @@ public class ProductsController : ControllerBase
         _products = products;
     }
 
+    [RequirePermission(Permissions.Orders.Read)]
     [HttpGet]
     [ProducesResponseType<IReadOnlyList<ProductDto>>(StatusCodes.Status200OK)]
     public async Task<ActionResult<IReadOnlyList<ProductDto>>> GetAll(CancellationToken ct)
         => Ok(await _products.GetAllAsync(ct));
 
+    [RequirePermission(Permissions.Orders.Read)]
     [HttpGet("{id:long}")]
     [ProducesResponseType<ProductDto>(StatusCodes.Status200OK)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]

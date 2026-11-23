@@ -69,3 +69,16 @@ public class ChangeOrderStatusDto
     [Required, MaxLength(30)]
     public string Status { get; set; } = "";
 }
+
+/// <summary>Лаб. 09: PUT /api/orders/{id} (orders:update) — зміна адреси доставки й коментаря.</summary>
+public class UpdateOrderDto
+{
+    [Required, MinLength(5), MaxLength(400)]
+    public string ShippingAddress { get; set; } = "";
+
+    [Required, MinLength(2), MaxLength(100)]
+    public string City { get; set; } = "";
+
+    [MaxLength(1000)]
+    public string? Comment { get; set; }
+}

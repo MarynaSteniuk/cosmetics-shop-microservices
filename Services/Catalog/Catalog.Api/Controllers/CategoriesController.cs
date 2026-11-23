@@ -1,3 +1,4 @@
+using Catalog.Api.Authorization;
 using Catalog.Bll.Dtos;
 using Catalog.Bll.Services;
 using Microsoft.AspNetCore.Mvc;
@@ -16,17 +17,20 @@ public class CategoriesController : ControllerBase
         _categories = categories;
     }
 
+    [RequirePermission(Permissions.Products.Read)]
     [HttpGet]
     [ProducesResponseType<IReadOnlyList<CategoryDto>>(StatusCodes.Status200OK)]
     public async Task<ActionResult<IReadOnlyList<CategoryDto>>> GetAll(CancellationToken ct)
         => Ok(await _categories.GetAllAsync(ct));
 
+    [RequirePermission(Permissions.Products.Read)]
     [HttpGet("{id:int}/products")]
     [ProducesResponseType<CategoryWithProductsDto>(StatusCodes.Status200OK)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
     public async Task<ActionResult<CategoryWithProductsDto>> GetWithProducts(int id, CancellationToken ct)
         => Ok(await _categories.GetWithProductsAsync(id, ct));
 
+    [RequirePermission(Permissions.Products.Read)]
     [HttpGet("{slug}/recent")]
     [ProducesResponseType<IReadOnlyList<RecentlyAddedProductDto>>(StatusCodes.Status200OK)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest)]

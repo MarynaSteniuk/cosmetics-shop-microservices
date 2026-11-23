@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
+using Orders.Api.Authorization;
 using Orders.Bll.Dtos;
 using Orders.Bll.Services;
 
@@ -16,6 +17,7 @@ public class CustomersController : ControllerBase
         _customers = customers;
     }
 
+    [RequirePermission(Permissions.Orders.Read)]
     [HttpGet]
     [ProducesResponseType<IReadOnlyList<CustomerDto>>(StatusCodes.Status200OK)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest)]
@@ -23,12 +25,14 @@ public class CustomersController : ControllerBase
         [FromQuery] int page = 1, [FromQuery] int pageSize = 20, CancellationToken ct = default)
         => Ok(await _customers.GetPageAsync(page, pageSize, ct));
 
+    [RequirePermission(Permissions.Orders.Read)]
     [HttpGet("{id:long}")]
     [ProducesResponseType<CustomerDto>(StatusCodes.Status200OK)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
     public async Task<ActionResult<CustomerDto>> GetById(long id, CancellationToken ct)
         => Ok(await _customers.GetByIdAsync(id, ct));
 
+    [RequirePermission(Permissions.Orders.Create)]
     [HttpPost]
     [ProducesResponseType<CustomerDto>(StatusCodes.Status201Created)]
     [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest)]
@@ -39,6 +43,7 @@ public class CustomersController : ControllerBase
         return CreatedAtAction(nameof(GetById), new { id = created.Id }, created);
     }
 
+    [RequirePermission(Permissions.Orders.Update)]
     [HttpPut("{id:long}")]
     [ProducesResponseType<CustomerDto>(StatusCodes.Status200OK)]
     [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest)]
@@ -47,6 +52,7 @@ public class CustomersController : ControllerBase
     public async Task<ActionResult<CustomerDto>> Update(long id, UpdateCustomerDto input, CancellationToken ct)
         => Ok(await _customers.UpdateAsync(id, input, ct));
 
+    [RequirePermission(Permissions.Orders.Delete)]
     [HttpDelete("{id:long}")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]

@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Reviews.Application.Common.Models;
 using Reviews.Application.Reviews.Commands.AddComment;
@@ -12,6 +13,7 @@ using Reviews.WebApi.Contracts;
 namespace Reviews.WebApi.Controllers;
 
 [Route("api/reviews")]
+[Authorize]
 public sealed class ReviewsController : ApiControllerBase
 {
     [HttpGet]

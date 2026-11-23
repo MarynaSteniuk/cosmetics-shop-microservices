@@ -165,6 +165,24 @@ public sealed class ProductService : IProductService
         return await GetByIdAsync(id, ct);
     }
 
+    /// <summary>Лаб. 09: публікація товару (products:publish) — товар знову видимий у каталозі.</summary>
+    public async Task<ProductDto> PublishAsync(long id, CancellationToken ct = default)
+    {
+        using var activity = CatalogTelemetry.Source.StartActivity("PublishProduct");
+        activity?.SetTag("product.id", id);
+
+        var product = await FindAsync(id, ct);
+
+        product.Activate();
+        await _uow.SaveChangesAsync(ct);
+
+        _logger.LogInformation("Product {ProductId} published", id);
+
+        await InvalidateProductAsync(product, "ProductPublished", ct);
+
+        return await GetByIdAsync(id, ct);
+    }
+
     public async Task<ProductDto> AddStockAsync(long id, StockChangeDto input, CancellationToken ct = default)
     {
         var product = await FindAsync(id, ct);

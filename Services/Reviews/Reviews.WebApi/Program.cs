@@ -1,8 +1,10 @@
 using AutoMapper;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Server.Kestrel.Core;
 using MongoDB.Driver;
 using Platform.ServiceDefaults.Correlation;
 using Platform.ServiceDefaults.Grpc;
+using Platform.ServiceDefaults.Security;
 using Reviews.Application.Common.Mappings;
 using Reviews.Application;
 using Reviews.Infrastructure.Persistence;
@@ -15,6 +17,52 @@ using Reviews.WebApi.IntegrationEvents;
 var builder = WebApplication.CreateBuilder(args);
 
 builder.AddServiceDefaults();
+
+// ---------- Лаб. 09: автентифікація — токени трьох видавців ----------
+var authServiceIssuer = PlatformAuthentication.AuthServiceIssuer(builder.Configuration);
+
+builder.Services.AddAuthentication(options =>
+    {
+        options.DefaultScheme = PlatformAuthentication.MultiIssuerScheme;
+        options.DefaultChallengeScheme = PlatformAuthentication.MultiIssuerScheme;
+    })
+    .AddPolicyScheme(PlatformAuthentication.MultiIssuerScheme, "Auth Service, IdentityServer або Keycloak", options =>
+        options.ForwardDefaultSelector = context => PlatformAuthentication.SelectScheme(context, authServiceIssuer))
+    // Частина 1: JWT від Auth Service (HMAC-SHA256, Jwt:SecretKey з AppHost)
+    .AddJwtBearer(PlatformAuthentication.AuthServiceScheme, options =>
+    {
+        options.MapInboundClaims = false;
+        options.TokenValidationParameters = PlatformAuthentication.AuthServiceValidation(builder.Configuration);
+    })
+    // Частина 2: Duende IdentityServer — Authority + Audience (ApiResource)
+    .AddJwtBearer(PlatformAuthentication.IdentityServerScheme, options =>
+    {
+        options.Authority = PlatformAuthentication.IdentityServerAuthority(builder.Configuration);
+        options.Audience = "reviews_api";
+        options.MapInboundClaims = false;
+        options.TokenValidationParameters.AuthenticationType = PlatformAuthentication.IdentityServerScheme;
+        options.TokenValidationParameters.RoleClaimType = PlatformAuthentication.RoleClaimType;
+    })
+    // Частина 3: Keycloak (Aspire.Keycloak.Authentication), realm DevRealmDrivers, відгуки перевіряються audience products-api
+    .AddKeycloakJwtBearer(PlatformAuthentication.KeycloakServiceName, PlatformAuthentication.KeycloakRealm,
+        PlatformAuthentication.KeycloakScheme, options =>
+        {
+            options.Audience = "products-api"; // відгуки належать товарам — той самий resource server Keycloak
+            options.RequireHttpsMetadata = false;
+            options.MapInboundClaims = false;
+            options.TokenValidationParameters.AuthenticationType = PlatformAuthentication.KeycloakScheme;
+            options.TokenValidationParameters.RoleClaimType = PlatformAuthentication.RoleClaimType;
+            options.Events = PlatformAuthentication.KeycloakEvents();
+        });
+
+// ---------- Лаб. 09: авторизація — політики за дозволами матриці (Keycloak permissions) ----------
+builder.Services.AddAuthorization(options =>
+{
+    // Частина 2: політика за scope IdentityServer для machine-to-machine викликів (Aggregator, Client Credentials)
+    options.AddPolicy("reviews.read", policy => policy
+        .RequireAuthenticatedUser()
+        .RequireClaim(PlatformAuthentication.ScopeClaimType, "reviews.read"));
+});
 
 builder.Services.AddMemoryCache(options => options.SizeLimit = 10_000);
 builder.AddRedisDistributedCache("redis", settings => settings.DisableHealthChecks = true);
@@ -62,6 +110,8 @@ builder.Services.AddSwaggerGen();
 var app = builder.Build();
 
 app.UseMiddleware<CorrelationIdMiddleware>();
+app.UseAuthentication();
+app.UseAuthorization();
 app.MapDefaultEndpoints();
 app.MapGrpcHealthChecksService();
 app.MapGrpcService<ReviewsGrpcService>();

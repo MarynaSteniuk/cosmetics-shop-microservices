@@ -131,6 +131,21 @@ VALUES (@OrderId, @ShippingAddress, @City, @Comment)";
             new { details.OrderId, details.ShippingAddress, details.City, details.Comment }, ct));
     }
 
+    public async Task<bool> UpdateDetailsAsync(OrderDetails details, CancellationToken ct = default)
+    {
+        const string sql = @"
+UPDATE d
+SET d.ShippingAddress = @ShippingAddress, d.City = @City, d.Comment = @Comment
+FROM dbo.OrderDetails d
+JOIN dbo.Orders o ON o.Id = d.OrderId
+WHERE d.OrderId = @OrderId AND o.IsDeleted = 0";
+
+        await EnsureOpenAsync(ct);
+        var affected = await Connection.ExecuteAsync(Command(sql,
+            new { details.OrderId, details.ShippingAddress, details.City, details.Comment }, ct));
+        return affected > 0;
+    }
+
     public async Task AddItemAsync(OrderItem item, CancellationToken ct = default)
     {
         const string sql = @"

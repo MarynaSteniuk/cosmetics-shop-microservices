@@ -209,6 +209,25 @@ public sealed class OrderService : IOrderService
         return await GetByIdAsync(id, ct);
     }
 
+    public async Task<OrderDto> UpdateDetailsAsync(long id, UpdateOrderDto input, CancellationToken ct = default)
+    {
+        var details = new OrderDetails
+        {
+            OrderId = id,
+            ShippingAddress = input.ShippingAddress.Trim(),
+            City = input.City.Trim(),
+            Comment = string.IsNullOrWhiteSpace(input.Comment) ? null : input.Comment.Trim()
+        };
+
+        if (!await _uow.Orders.UpdateDetailsAsync(details, ct))
+            throw new NotFoundException($"Order {id} not found");
+
+        _logger.LogInformation("Order {OrderId} shipping details updated", id);
+        await _cache.InvalidateAsync([OrdersCacheKeys.Order(id), OrdersCacheKeys.AggregatedOrder(id)], "OrderUpdated", ct);
+
+        return await GetByIdAsync(id, ct);
+    }
+
     public async Task DeleteAsync(long id, CancellationToken ct = default)
     {
         await _uow.Orders.DeleteAsync(id, ct);

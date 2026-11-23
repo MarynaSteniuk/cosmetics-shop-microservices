@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Reviews.Application.Discussions.Dtos;
 using Reviews.Application.Discussions.Queries.GetDiscussionById;
@@ -5,6 +6,7 @@ using Reviews.Application.Discussions.Queries.GetDiscussionById;
 namespace Reviews.WebApi.Controllers;
 
 [Route("api/discussions")]
+[Authorize]
 public sealed class DiscussionsController : ApiControllerBase
 {
     [HttpGet("{id}")]

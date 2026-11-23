@@ -4,6 +4,7 @@ using Platform.Aggregator.Clients;
 using Platform.Aggregator.Grpc;
 using Platform.Aggregator.HealthChecks;
 using Platform.Aggregator.Resilience;
+using Platform.Aggregator.Security;
 using Platform.Aggregator.Services;
 using Platform.ServiceDefaults.Correlation;
 using Reviews.Grpc;
@@ -19,24 +20,39 @@ builder.Services.AddAggregatorHealthChecks(builder.Configuration);
 
 builder.Services.AddSingleton<GrpcClientLoggingInterceptor>();
 
+// ---------- Лаб. 09: Client Credentials — Aggregator ходить у сервіси зі своїм токеном IdentityServer ----------
+builder.Services.AddOptions<ClientCredentialsOptions>()
+    .Bind(builder.Configuration.GetSection(ClientCredentialsOptions.SectionName))
+    .ValidateDataAnnotations()
+    .ValidateOnStart();
+builder.Services.AddHttpClient(ClientCredentialsTokenProvider.HttpClientName);
+builder.Services.AddSingleton<IServiceTokenProvider, ClientCredentialsTokenProvider>();
+builder.Services.AddTransient<ClientCredentialsTokenHandler>();
+
 builder.Services.AddGrpcClient<OrdersService.OrdersServiceClient>(o => o.Address = new Uri("https://orders-api"))
     .ConfigureChannel(channel => channel.ServiceConfig = GrpcRetryPolicies.For(ResiliencePolicies.Orders))
     .AddInterceptor<GrpcClientLoggingInterceptor>()
+    .AddHttpMessageHandler<ClientCredentialsTokenHandler>()
     .AddServiceResilience(ResiliencePolicies.Orders, ClientTransport.Grpc);
 builder.Services.AddGrpcClient<CatalogService.CatalogServiceClient>(o => o.Address = new Uri("https://catalog-api"))
     .ConfigureChannel(channel => channel.ServiceConfig = GrpcRetryPolicies.For(ResiliencePolicies.Catalog))
     .AddInterceptor<GrpcClientLoggingInterceptor>()
+    .AddHttpMessageHandler<ClientCredentialsTokenHandler>()
     .AddServiceResilience(ResiliencePolicies.Catalog, ClientTransport.Grpc);
 builder.Services.AddGrpcClient<ReviewsService.ReviewsServiceClient>(o => o.Address = new Uri("https://reviews-api"))
     .ConfigureChannel(channel => channel.ServiceConfig = GrpcRetryPolicies.For(ResiliencePolicies.Reviews))
     .AddInterceptor<GrpcClientLoggingInterceptor>()
+    .AddHttpMessageHandler<ClientCredentialsTokenHandler>()
     .AddServiceResilience(ResiliencePolicies.Reviews, ClientTransport.Grpc);
 
 builder.Services.AddHttpClient<OrdersClient>(client => client.BaseAddress = new Uri("https+http://orders-api"))
+    .AddHttpMessageHandler<ClientCredentialsTokenHandler>()
     .AddServiceResilience(ResiliencePolicies.Orders, ClientTransport.Http);
 builder.Services.AddHttpClient<CatalogClient>(client => client.BaseAddress = new Uri("https+http://catalog-api"))
+    .AddHttpMessageHandler<ClientCredentialsTokenHandler>()
     .AddServiceResilience(ResiliencePolicies.Catalog, ClientTransport.Http);
 builder.Services.AddHttpClient<ReviewsClient>(client => client.BaseAddress = new Uri("https+http://reviews-api"))
+    .AddHttpMessageHandler<ClientCredentialsTokenHandler>()
     .AddServiceResilience(ResiliencePolicies.Reviews, ClientTransport.Http);
 
 builder.Services.AddScoped<GrpcOrderAggregationService>();

@@ -3,9 +3,12 @@ using Catalog.Bll.Services;
 using Catalog.Domain.Exceptions;
 using Catalog.Grpc;
 using Grpc.Core;
+using Microsoft.AspNetCore.Authorization;
 
 namespace Catalog.Api.Grpc;
 
+/// <summary>Лаб. 09: виклики лише від Aggregator з токеном Client Credentials (scope products.read).</summary>
+[Authorize(Policy = "products.read")]
 public sealed class CatalogGrpcService : CatalogService.CatalogServiceBase
 {
     private const int MaxIdsPerRequest = 100;

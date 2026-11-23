@@ -1,3 +1,4 @@
+using Catalog.Api.Authorization;
 using Catalog.Api.Metrics;
 using Catalog.Bll.Dtos;
 using Catalog.Bll.Queries;
@@ -21,6 +22,7 @@ public class ProductsController : ControllerBase
         _metrics = metrics;
     }
 
+    [RequirePermission(Permissions.Products.Read)]
     [HttpGet]
     [ProducesResponseType<PagedResult<ProductListItemDto>>(StatusCodes.Status200OK)]
     [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest)]
@@ -37,6 +39,7 @@ public class ProductsController : ControllerBase
         return Ok(result);
     }
 
+    [RequirePermission(Permissions.Products.Read)]
     [HttpGet("low-stock")]
     [ProducesResponseType<IReadOnlyList<ProductListItemDto>>(StatusCodes.Status200OK)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest)]
@@ -44,12 +47,14 @@ public class ProductsController : ControllerBase
         [FromQuery] int threshold = 5, CancellationToken ct = default)
         => Ok(await _products.GetLowStockAsync(threshold, ct));
 
+    [RequirePermission(Permissions.Products.Read)]
     [HttpGet("{id:long}")]
     [ProducesResponseType<ProductDto>(StatusCodes.Status200OK)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
     public async Task<ActionResult<ProductDto>> GetById(long id, CancellationToken ct)
         => Ok(await _metrics.MeasureAsync("get", () => _products.GetByIdAsync(id, ct)));
 
+    [RequirePermission(Permissions.Products.Create)]
     [HttpPost]
     [ProducesResponseType<ProductDto>(StatusCodes.Status201Created)]
     [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest)]
@@ -66,6 +71,7 @@ public class ProductsController : ControllerBase
         return CreatedAtAction(nameof(GetById), new { id = created.Id }, created);
     }
 
+    [RequirePermission(Permissions.Products.Update)]
     [HttpPut("{id:long}/price")]
     [ProducesResponseType<ProductDto>(StatusCodes.Status200OK)]
     [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest)]
@@ -83,6 +89,7 @@ public class ProductsController : ControllerBase
         return Ok(updated);
     }
 
+    [RequirePermission(Permissions.Products.Update)]
     [HttpPut("{id:long}/name")]
     [ProducesResponseType<ProductDto>(StatusCodes.Status200OK)]
     [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest)]
@@ -98,6 +105,7 @@ public class ProductsController : ControllerBase
         return Ok(updated);
     }
 
+    [RequirePermission(Permissions.Products.Update)]
     [HttpPost("{id:long}/stock/add")]
     [ProducesResponseType<ProductDto>(StatusCodes.Status200OK)]
     [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest)]
@@ -109,6 +117,7 @@ public class ProductsController : ControllerBase
         return Ok(product);
     }
 
+    [RequirePermission(Permissions.Products.Update)]
     [HttpPost("{id:long}/stock/remove")]
     [ProducesResponseType<ProductDto>(StatusCodes.Status200OK)]
     [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest)]
@@ -121,6 +130,14 @@ public class ProductsController : ControllerBase
         return Ok(product);
     }
 
+    [RequirePermission(Permissions.Products.Publish)]
+    [HttpPost("{id:long}/publish")]
+    [ProducesResponseType<ProductDto>(StatusCodes.Status200OK)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<ProductDto>> Publish(long id, CancellationToken ct)
+        => Ok(await _metrics.MeasureAsync("publish", () => _products.PublishAsync(id, ct)));
+
+    [RequirePermission(Permissions.Products.Delete)]
     [HttpDelete("{id:long}")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]

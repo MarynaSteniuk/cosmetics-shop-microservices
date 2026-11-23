@@ -1,0 +1,17 @@
+# Секрети додаються командами (шифруються паролем PULUMI_CONFIG_PASSPHRASE):
+#   pulumi config set --secret keycloakPassword <пароль адміністратора Keycloak з AppHost>
+#   pulumi config set --secret postmanSecret postman-kc-secret
+#   pulumi config set --secret aggregatorSecret aggregator-kc-secret
+#   pulumi config set --secret userInitialPassword Temp#2026Pass
+config:
+  cosmetics-keycloak:keycloakUrl: https://localhost:8080
+  cosmetics-keycloak:keycloakAdmin: admin
+  cosmetics-keycloak:keycloakPassword:
+    secure: v1:MDEXQFyhV9x9rEpI:oF7DSAXXHeiAwZkjrBc1wWXeiPp561+NYXdKc3M5cPbfeA==
+  cosmetics-keycloak:postmanSecret:
+    secure: v1:ZD3JhKJ7Vv4LgdON:t8BwuEIskBfoW37aLtDESGSh8s0qdityVvz4w2vbX0rQ
+  cosmetics-keycloak:aggregatorSecret:
+    secure: v1:XBhrfxrxykKJJXuI:OpLYbV6dTNmygH7oVPP4n58HpTKnaNxtHyPw3RdmRFJIZJW1
+  cosmetics-keycloak:userInitialPassword:
+    secure: v1:zUMjJ62/qlP9aUZH:RA/lMA48+apIJkfSrRAZLGU8ZGuKg/AqQBFRSgk=
+encryptionsalt: v1:lV1mD7MF3zk=:v1:OFF16bRyHAeFxKgz:vPhiE5rt3yBOCS6gZmfhh3BOmZY6YQ==

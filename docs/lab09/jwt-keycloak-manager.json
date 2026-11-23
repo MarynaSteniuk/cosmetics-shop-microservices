@@ -1,0 +1,70 @@
+﻿{
+    "exp":  1795464709,
+    "iat":  1795463809,
+    "jti":  "onrtro:d3e0490f-dbc7-7096-07fc-ee637b9e4a8f",
+    "iss":  "https://localhost:8080/realms/DevRealmDrivers",
+    "aud":  [
+                "orders-api",
+                "products-api",
+                "payments-api",
+                "account"
+            ],
+    "sub":  "3a06aed9-8879-4caa-8475-ff9a0a7fceef",
+    "typ":  "Bearer",
+    "azp":  "postman",
+    "sid":  "V4A1P8BYMONYZ1Xcxh78Lbbk",
+    "acr":  "1",
+    "allowed-origins":  [
+                            "https://oauth.pstmn.io"
+                        ],
+    "realm_access":  {
+                         "roles":  [
+                                       "manager",
+                                       "offline_access",
+                                       "uma_authorization",
+                                       "default-roles-devrealmdrivers"
+                                   ]
+                     },
+    "resource_access":  {
+                            "products-api":  {
+                                                 "roles":  [
+                                                               "products:read",
+                                                               "products:update",
+                                                               "products:create",
+                                                               "products:publish"
+                                                           ]
+                                             },
+                            "orders-api":  {
+                                               "roles":  [
+                                                             "orders:read",
+                                                             "orders:approve",
+                                                             "orders:create",
+                                                             "orders:update"
+                                                         ]
+                                           },
+                            "account":  {
+                                            "roles":  [
+                                                          "manage-account",
+                                                          "manage-account-links",
+                                                          "view-profile"
+                                                      ]
+                                        }
+                        },
+    "scope":  "openid profile orders_mgmt payments_mgmt products_mgmt email",
+    "email_verified":  true,
+    "permissions":  [
+                        "products:read",
+                        "products:update",
+                        "products:create",
+                        "products:publish",
+                        "orders:read",
+                        "orders:approve",
+                        "orders:create",
+                        "orders:update"
+                    ],
+    "name":  "Bob Manager",
+    "preferred_username":  "bob",
+    "given_name":  "Bob",
+    "family_name":  "Manager",
+    "email":  "bob@cosmetics.local"
+}

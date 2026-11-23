@@ -1,5 +1,6 @@
 using Google.Protobuf.WellKnownTypes;
 using Grpc.Core;
+using Microsoft.AspNetCore.Authorization;
 using Orders.Bll.Dtos;
 using Orders.Bll.Services;
 using Orders.Domain.Exceptions;
@@ -7,6 +8,8 @@ using Orders.Grpc;
 
 namespace Orders.Api.Grpc;
 
+/// <summary>Лаб. 09: виклики лише від Aggregator з токеном Client Credentials (scope orders.read).</summary>
+[Authorize(Policy = "orders.read")]
 public sealed class OrdersGrpcService : OrdersService.OrdersServiceBase
 {
     private readonly IOrderService _orders;

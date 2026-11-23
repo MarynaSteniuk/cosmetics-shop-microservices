@@ -490,3 +490,121 @@ RabbitMQ запускається в AppHost: `AddRabbitMQ("messaging").WithData
 3. Дублікат: опублікувати те саме повідомлення з тим самим EventId через Management UI → у логах `Duplicate ... skipped`.
 4. Зупинити orders-api, змінити кілька цін, запустити знову → усі події з черги обробляються.
 5. Надіслати в `orders.catalog-sync` повідомлення з некоректним JSON → воно потрапляє в `orders.catalog-sync.dlq`.
+
+## 9. Лаб. 09. Автентифікація та авторизація: ASP.NET Identity + JWT, Duende IdentityServer, Keycloak + Pulumi
+
+### 9.1. Схема
+```
+Postman / Swagger / curl
+        │  Bearer JWT від одного з трьох видавців
+        ▼
+Platform.ApiGateway :5000 ── перевіряє JWT (схема MultiIssuer), /auth/** анонімно, решта — "default" policy,
+        │                    YARP transform додає X-User-Id із sub
+        ├─► auth-api (/auth/**, /users/**)          ── Частина 1: ASP.NET Identity + JWT, база CosmeticsIdentityDb
+        ├─► orders-api / catalog-api / payments-api ── [RequirePermission] за матрицею 3.3.1–3.3.3
+        ├─► reviews-api                             ── [Authorize]
+        └─► aggregator ── Client Credentials (IdentityServer, aggregator_service) ──► gRPC/HTTP до orders, catalog, reviews
+
+Видавці токенів: auth-api (issuer cosmetics-auth) · Platform.IdentityServer https://localhost:5101 (окремий SQL Server 14334,
+база CosmeticsIdentityServerDb) · Keycloak https://localhost:8080 (Aspire AddKeycloak, realm DevRealmDrivers створює Pulumi)
+```
+
+AppHost (`Platform.AppHost/AppHost.cs`, `PlatformAuthExtensions.cs`) передає сервісам `Jwt__*` (Auth Service), `IdentityServer__Authority` і посилання на ресурс `keycloak`. Параметри AppHost: `sql-password`, `jwt-secret` (≥ 32 символи), `keycloak-admin`, `keycloak-password`.
+
+### 9.2. Частина 1. Auth Service (ASP.NET Identity + JWT)
+Проєкт `Services/Auth/Auth.Api`, окрема база `CosmeticsIdentityDb` (міграція `InitialIdentity`), Gateway маршрутизує `/auth/**` і `/users/**`.
+
+| Endpoint | Опис |
+|---|---|
+| `POST /auth/register` | реєстрація, роль `User`, лист підтвердження (mock — у логах `[MOCK EMAIL]`) |
+| `POST /auth/login` | access token 15 хв + refresh token 7 днів (HttpOnly cookie; у Development також у тілі); lockout 5 спроб / 15 хв, вимагається підтверджений email |
+| `POST /auth/refresh-token` | rotation: старий токен відкликається (`ReplacedByTokenHash`); повторне використання відкликаного → відкликаються всі токени користувача |
+| `POST /auth/revoke-token`, `POST /auth/logout` | відкликання refresh token / вихід |
+| `POST /auth/verify-email`, `POST /auth/resend-verification` | одноразовий токен підтвердження (повторно → 409) |
+| `POST /auth/forgot-password`, `POST /auth/reset-password` | одноразовий токен скидання (2 год), після скидання всі refresh-токени відкликаються |
+| `POST /auth/change-password`, `GET /auth/me` | для автентифікованого користувача |
+| `/users`, `/users/{id}`, `/users/{id}/roles`, `/users/{id}/refresh-tokens` | `[Authorize]`; список, видалення й ролі — лише `Admin`, профіль — власник або `Admin` |
+
+Refresh-токени зберігаються лише як SHA-256 хеш (таблиця `RefreshTokens`). Seed: `admin@cosmetics.local` (User + Admin), `olena@cosmetics.local` (User, customer 1).
+
+### 9.3. Частина 2. Duende IdentityServer
+Проєкт `Platform.IdentityServer` (Quickstart UI, ASP.NET Identity, EF Configuration/Operational stores, міграції `InitialPersistedGrant`, `InitialConfiguration`, `InitialApplication`), окремий SQL Server `identityserver-sql`.
+
+| Clients | Grant | Scopes |
+|---|---|---|
+| `postman` | Authorization Code (redirect `https://oauth.pstmn.io/v1/callback`), offline access | openid, profile, email, orders.read/write, products.read/write, reviews.read, payments.read |
+| `swagger` | Authorization Code + PKCE, public | openid, profile, orders.read/write, products.read/write |
+| `aggregator_service` | Client Credentials | orders.read, products.read, reviews.read |
+
+API resources (`aud`): `orders_api`, `products_api`, `reviews_api`, `payments_api`. Тестові користувачі: `alice` / `bob`, пароль `Pass123$`. Сервіси перевіряють токен через `Authority` + `Audience`; gRPC-сервіси для Aggregator захищені scope-політиками (`[Authorize(Policy = "orders.read")]` тощо). Swagger UI orders-api і catalog-api має кнопку **Authorize** (PKCE, клієнт `swagger`).
+
+Aggregator (`Platform.Aggregator/Security`) отримує токен Client Credentials, кешує його до закінчення терміну мінус 60 с і додає до всіх gRPC/HTTP-викликів через `ClientCredentialsTokenHandler`.
+
+### 9.4. Частина 3. Keycloak + Pulumi
+Keycloak розгортається траєкторією Б: `builder.AddKeycloak("keycloak", 8080, ...)` з data volume; сервіси підключають `AddKeycloakJwtBearer("keycloak", "DevRealmDrivers", ...)` (Aspire.Keycloak.Authentication). Aspire 13 віддає Keycloak лише по HTTPS: `https://localhost:8080`.
+
+Pulumi C# (`infra/keycloak`, провайдер `Pulumi.Keycloak` 6.15.0) створює 82 ресурси:
+- realm `DevRealmDrivers`;
+- resource servers `orders-api`, `products-api`, `payments-api` (Authorization увімкнено, `ENFORCING`, `AFFIRMATIVE`): authorization scopes, resource, client roles з тими самими назвами, role policy на кожну роль, scope permission на кожен дозвіл;
+- realm roles `admin`, `manager`, `user`, `guest` — composite з клієнтських ролей за матрицею (`PermissionMatrix.cs`);
+- client scopes `orders_mgmt`, `products_mgmt`, `payments_mgmt` з audience mapper і mapper claim `permissions`;
+- clients `postman` (Auth Code + password grant), `swagger` (public, PKCE S256), `aggregator-service` (Client Credentials, service account з `orders:read`, `products:read`); default scopes — в одному циклі для всіх клієнтів;
+- users `alice` (admin), `bob` (manager), `carol` (user), `dave` (guest) — тимчасовий пароль, підтверджений email.
+
+```
+cd infra\keycloak
+set PULUMI_CONFIG_PASSPHRASE=lab09
+pulumi login --local
+pulumi stack init dev
+pulumi config set keycloakUrl https://localhost:8080
+pulumi config set --secret keycloakPassword <пароль адміністратора Keycloak>
+pulumi config set --secret postmanSecret postman-kc-secret
+pulumi config set --secret aggregatorSecret aggregator-kc-secret
+pulumi config set --secret userInitialPassword Temp#2026Pass
+pulumi preview
+pulumi up --yes
+pulumi stack output        # RealmUrl, AdminConsoleUrl, ClientIds, ClientSecrets
+pulumi destroy --yes       # очищення після демонстрації
+```
+
+![pulumi up](docs/lab09-pulumi-up.png)
+
+Матриця доступу:
+
+| Сервіс | Endpoint | Permission | admin | manager | user | guest |
+|---|---|---|---|---|---|---|
+| Orders | `GET /api/orders`, `GET /api/orders/{id}` | `orders:read` | ✓ | ✓ | ✓ | |
+| Orders | `POST /api/orders` | `orders:create` | ✓ | ✓ | ✓ | |
+| Orders | `PUT /api/orders/{id}`, `POST /api/orders/{id}/status` | `orders:update` | ✓ | ✓ | | |
+| Orders | `DELETE /api/orders/{id}` | `orders:delete` | ✓ | | | |
+| Orders | `POST /api/orders/{id}/approve` (`/confirm`) | `orders:approve` | ✓ | ✓ | | |
+| Products | `GET /api/products`, `GET /api/products/{id}`, `GET /api/categories/**` | `products:read` | ✓ | ✓ | ✓ | ✓ |
+| Products | `POST /api/products` | `products:create` | ✓ | ✓ | | |
+| Products | `PUT /api/products/{id}/price`, `/name`, `POST /stock/add`, `/stock/remove` | `products:update` | ✓ | ✓ | | |
+| Products | `DELETE /api/products/{id}` | `products:delete` | ✓ | | | |
+| Products | `POST /api/products/{id}/publish` | `products:publish` | ✓ | ✓ | | |
+| Payments | `GET /api/payments`, `GET /api/payments/{id}` | `payments:read` | ✓ | | | |
+| Payments | `POST /api/payments/process` | `payments:process` | ✓ | | | |
+| Payments | `POST /api/payments/refund` | `payments:refund` | ✓ | | | |
+
+### 9.5. Авторизація в мікросервісах
+- `Platform.ServiceDefaults/Security/PlatformAuthentication.cs`: policy scheme `MultiIssuer` читає `iss` токена і передає його схемі `AuthService` (HMAC-SHA256), `IdentityServer` (Authority) або `Keycloak`; `MapInboundClaims = false`, ролі `realm_access.roles` переносяться в claim `role`.
+- У `Orders.Api`, `Catalog.Api`, `Payments.Api` папка `Authorization/`: `Permissions`, `PermissionRequirement`, `PermissionAuthorizationHandler`, `RequirePermissionAttribute`, `PermissionGrants`. Політика на кожен дозвіл реєструється в `Program.cs`, `[RequirePermission(...)]` стоїть на кожному endpoint.
+- `PermissionGrants` збирає дозволи залежно від видавця: Keycloak — `authorization.permissions[].scopes` (RPT), claim `permissions` і `resource_access.{client}.roles`; IdentityServer — scopes (`orders.read` → `orders:read`, `orders.write` → create/update/delete/approve ...); Auth Service — ролі (`Admin` — усе, `User` — `orders:read`, `orders:create`, `products:read`). Відмова логується з переліком наявних дозволів.
+- Claims у бізнес-логіці: користувач Auth Service з claim `customer_id` бачить і створює лише замовлення свого клієнта (`CustomerAccess`).
+- Gateway (варіант А): валідує токени, `AuthorizationPolicy` у маршрутах YARP, transform `X-User-Id`, логування 401/403.
+- `Payments.Api` — заглушка (in-memory) з трьома операціями.
+
+### 9.6. Перевірка
+1. Запустити `Platform.AppHost`, виконати `pulumi up` (п. 9.4).
+2. Увійти в https://localhost:8080/realms/DevRealmDrivers/account під `alice`, `bob`, `carol`, `dave` з паролем `Temp#2026Pass` і задати нові (`Alice#2026Pass`, `Bob#2026Pass`, `Carol#2026Pass`, `Dave#2026Pass`).
+3. Запустити скрипт: `powershell -ExecutionPolicy Bypass -File docs\lab09\check-lab09.ps1`. Він проганяє кожен endpoint з матриці для 4 ролей, перевіряє RPT менеджера і зберігає:
+   - [docs/lab09/matrix-results.md](docs/lab09/matrix-results.md) — таблиця фактичних кодів;
+   - `docs/lab09/jwt-auth-service-admin.json` (roles), `jwt-identityserver-client-credentials.json` (без `sub`), `jwt-keycloak-manager.json` (`permissions`), `jwt-keycloak-manager-rpt.json` (`authorization.permissions`).
+4. Postman: [docs/lab09/Lab09.postman_collection.json](docs/lab09/Lab09.postman_collection.json) — register/login/refresh/revoke/logout, reset password, Authorization Code (IdentityServer і Keycloak), Client Credentials, RPT, папка матриці з тестами на очікуваний код (Collection Runner).
+
+![Перевірка матриці](docs/lab09-matrix-check.png)
+
+![Тимчасовий пароль Keycloak](docs/lab09-keycloak-temp-password.png)
+
+![Ресурси в Dashboard](docs/lab09-aspire-resources.png)

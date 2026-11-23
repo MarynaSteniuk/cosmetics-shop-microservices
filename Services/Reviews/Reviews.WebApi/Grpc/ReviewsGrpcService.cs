@@ -2,6 +2,7 @@ using FluentValidation;
 using Google.Protobuf.WellKnownTypes;
 using Grpc.Core;
 using MediatR;
+using Microsoft.AspNetCore.Authorization;
 using MongoDB.Bson;
 using Reviews.Application.Common.Exceptions;
 using Reviews.Application.Reviews.Dtos;
@@ -11,6 +12,8 @@ using Reviews.Grpc;
 
 namespace Reviews.WebApi.Grpc;
 
+/// <summary>Лаб. 09: виклики лише від Aggregator з токеном Client Credentials (scope reviews.read).</summary>
+[Authorize(Policy = "reviews.read")]
 public sealed class ReviewsGrpcService : ReviewsService.ReviewsServiceBase
 {
     private const int MaxProductsPerRequest = 100;
