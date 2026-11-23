@@ -53,6 +53,15 @@ builder.Services.AddAuthorization(options =>
             .RequireAuthenticatedUser()
             .AddRequirements(new PermissionRequirement(permission)));
 
+    // Частина 2: scope-based політики для токенів IdentityServer (ApiResource payments_api).
+    // На ендпоінтах діють permission-політики: PermissionGrants зіставляє scope payments.read → payments:read,
+    // payments.process → payments:process + payments:refund.
+    options.AddPolicy("payments.read", policy => policy
+        .RequireAuthenticatedUser()
+        .RequireClaim(PlatformAuthentication.ScopeClaimType, "payments.read"));
+    options.AddPolicy("payments.process", policy => policy
+        .RequireAuthenticatedUser()
+        .RequireClaim(PlatformAuthentication.ScopeClaimType, "payments.process"));
 });
 builder.Services.AddSingleton<IAuthorizationHandler, PermissionAuthorizationHandler>();
 

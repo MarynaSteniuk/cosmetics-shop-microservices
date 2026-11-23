@@ -39,29 +39,15 @@ return await Deployment.RunAsync(() =>
         PasswordPolicy = "length(8) and digits(1) and upperCase(1) and lowerCase(1) and specialChars(1)"
     }, Opts());
 
+    // Factory pattern: усі OpenID clients (resource servers і споживачі) — у KeycloakClientFactory
+    var clients = new KeycloakClientFactory(realm.Id, provider);
+
     // ---------- Resource servers: client + authorization scopes + resource + client roles ----------
     var servers = new Dictionary<string, ResourceServer>();
 
     foreach (var definition in PermissionMatrix.ResourceServers)
     {
-        var client = new Keycloak.OpenId.Client($"{definition.ClientId}-client", new Keycloak.OpenId.ClientArgs
-        {
-            RealmId = realm.Id,
-            ClientId = definition.ClientId,
-            Name = definition.DisplayName,
-            Description = $"Resource server for {definition.DisplayName}",
-            Enabled = true,
-            AccessType = "CONFIDENTIAL",
-            StandardFlowEnabled = false,
-            DirectAccessGrantsEnabled = false,
-            ServiceAccountsEnabled = true,
-            Authorization = new Keycloak.OpenId.Inputs.ClientAuthorizationArgs
-            {
-                PolicyEnforcementMode = "ENFORCING",
-                DecisionStrategy = "AFFIRMATIVE",
-                KeepDefaults = false
-            }
-        }, Opts());
+        var client = clients.CreateResourceServer(definition);
 
         var scopes = new Dictionary<string, Keycloak.OpenId.ClientAuthorizationScope>();
         var clientRoles = new Dictionary<string, Keycloak.Role>();
@@ -187,96 +173,29 @@ return await Deployment.RunAsync(() =>
                 IncludeInTokenScope = true
             }, Opts());
 
-        _ = new Keycloak.OpenId.AudienceProtocolMapper($"{server.Definition.ClientScopeName}-audience",
-            new Keycloak.OpenId.AudienceProtocolMapperArgs
-            {
-                RealmId = realm.Id,
-                ClientScopeId = clientScope.Id,
-                Name = $"{server.Definition.ClientId}-audience",
-                IncludedClientAudience = server.Definition.ClientId,
-                AddToAccessToken = true,
-                AddToIdToken = false
-            }, Opts(server.Client));
-
-        // Protocol mapper: клієнтські ролі resource server → claim "permissions" звичайного access token
-        _ = new Keycloak.OpenId.UserClientRoleProtocolMapper($"{server.Definition.ClientScopeName}-permissions",
-            new Keycloak.OpenId.UserClientRoleProtocolMapperArgs
-            {
-                RealmId = realm.Id,
-                ClientScopeId = clientScope.Id,
-                Name = $"{server.Definition.ClientId}-permissions",
-                ClaimName = "permissions",
-                ClientIdForRoleMappings = server.Definition.ClientId,
-                Multivalued = true,
-                AddToAccessToken = true,
-                AddToIdToken = false,
-                AddToUserinfo = false
-            }, Opts(server.Client));
+        clientScope
+            .WithAudienceMapper(server.Definition, server.Client, realm.Id, provider)
+            .WithPermissionsMapper(server.Definition, server.Client, realm.Id, provider);
 
         clientScopes.Add(clientScope);
     }
 
-    // ---------- Клієнти-споживачі ----------
-    var postman = new Keycloak.OpenId.Client("postman-client", new Keycloak.OpenId.ClientArgs
-    {
-        RealmId = realm.Id,
-        ClientId = "postman",
-        Name = "Postman (Authorization Code + Password grant for testing)",
-        Enabled = true,
-        AccessType = "CONFIDENTIAL",
-        ClientSecret = config.RequireSecret("postmanSecret"),
-        StandardFlowEnabled = true,
-        DirectAccessGrantsEnabled = true,
-        ServiceAccountsEnabled = false,
-        ValidRedirectUris = { "https://oauth.pstmn.io/v1/callback" },
-        WebOrigins = { "+" }
-    }, Opts());
+    // ---------- Клієнти-споживачі: factory + extension method WithDefaultScopes ----------
+    var postman = clients
+        .CreateAuthorizationCodeClient("postman-client", "postman", "Postman (Authorization Code + Password grant for testing)",
+            config.RequireSecret("postmanSecret"), ["https://oauth.pstmn.io/v1/callback"], allowPasswordGrant: true)
+        .WithDefaultScopes("postman", realm.Id, clientScopes, provider);
 
-    var swagger = new Keycloak.OpenId.Client("swagger-client", new Keycloak.OpenId.ClientArgs
-    {
-        RealmId = realm.Id,
-        ClientId = "swagger",
-        Name = "Swagger UI (Authorization Code + PKCE)",
-        Enabled = true,
-        AccessType = "PUBLIC",
-        StandardFlowEnabled = true,
-        DirectAccessGrantsEnabled = false,
-        PkceCodeChallengeMethod = "S256",
-        ValidRedirectUris =
-        {
-            "https://localhost:7206/swagger/oauth2-redirect.html",
-            "https://localhost:7098/swagger/oauth2-redirect.html"
-        },
-        WebOrigins = { "https://localhost:7206", "https://localhost:7098" }
-    }, Opts());
+    var swagger = clients
+        .CreatePkceClient("swagger-client", "swagger", "Swagger UI (Authorization Code + PKCE)",
+            ["https://localhost:7206/swagger/oauth2-redirect.html", "https://localhost:7098/swagger/oauth2-redirect.html"],
+            ["https://localhost:7206", "https://localhost:7098"])
+        .WithDefaultScopes("swagger", realm.Id, clientScopes, provider);
 
-    var aggregator = new Keycloak.OpenId.Client("aggregator-service-client", new Keycloak.OpenId.ClientArgs
-    {
-        RealmId = realm.Id,
-        ClientId = "aggregator-service",
-        Name = "Aggregator (Client Credentials)",
-        Enabled = true,
-        AccessType = "CONFIDENTIAL",
-        ClientSecret = config.RequireSecret("aggregatorSecret"),
-        StandardFlowEnabled = false,
-        DirectAccessGrantsEnabled = false,
-        ServiceAccountsEnabled = true
-    }, Opts());
-
-    // "basic" обов'язковий у Keycloak 25+: без нього в токені немає claim sub
-    foreach (var (name, consumer) in new[] { ("postman", postman), ("swagger", swagger), ("aggregator-service", aggregator) })
-    {
-        var defaultScopes = Strings(["basic", "profile", "email", "roles", "web-origins", "acr"]);
-        foreach (var clientScope in clientScopes)
-            defaultScopes.Add(clientScope.Name);
-
-        _ = new Keycloak.OpenId.ClientDefaultScopes($"{name}-default-scopes", new Keycloak.OpenId.ClientDefaultScopesArgs
-        {
-            RealmId = realm.Id,
-            ClientId = consumer.Id,
-            DefaultScopes = defaultScopes
-        }, Opts());
-    }
+    var aggregator = clients
+        .CreateClientCredentialsClient("aggregator-service-client", "aggregator-service", "Aggregator (Client Credentials)",
+            config.RequireSecret("aggregatorSecret"))
+        .WithDefaultScopes("aggregator-service", realm.Id, clientScopes, provider);
 
     // Service account Aggregator отримує лише orders:read і products:read
     foreach (var (resourceServer, permission) in PermissionMatrix.AggregatorPermissions)

@@ -1,6 +1,28 @@
-@Auth.Api_HostAddress = http://localhost:5062
+# Лаб. 09, частина 1 — запити до Auth Service через Gateway
+@gateway = http://localhost:5000
 
-GET {{Auth.Api_HostAddress}}/weatherforecast/
-Accept: application/json
+### Реєстрація (роль User, лист підтвердження — у логах auth-api: [MOCK EMAIL])
+POST {{gateway}}/auth/register
+Content-Type: application/json
 
-###
+{ "email": "student@cosmetics.local", "password": "Student#2026Pass", "firstName": "Lab", "lastName": "Student" }
+
+### Вхід: access token у тілі, refresh token у HttpOnly cookie
+POST {{gateway}}/auth/login
+Content-Type: application/json
+
+{ "email": "admin@cosmetics.local", "password": "Admin#2026Pass" }
+
+### Оновлення пари токенів (rotation)
+POST {{gateway}}/auth/refresh-token
+Content-Type: application/json
+
+{ "refreshToken": "<refreshToken з відповіді login>" }
+
+### Поточний користувач
+GET {{gateway}}/auth/me
+Authorization: Bearer <accessToken>
+
+### Список користувачів (лише Admin)
+GET {{gateway}}/users?page=1&pageSize=10
+Authorization: Bearer <accessToken>

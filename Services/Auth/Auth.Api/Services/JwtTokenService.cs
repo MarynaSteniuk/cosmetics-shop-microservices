@@ -14,6 +14,7 @@ public sealed class JwtTokenService : IJwtTokenService
     public const string RoleClaimType = "role";
     public const string NameClaimType = JwtRegisteredClaimNames.UniqueName;
     public const string CustomerIdClaimType = "customer_id";
+    public const string UserNameClaimType = "username";
 
     private readonly JwtOptions _options;
     private readonly JsonWebTokenHandler _handler = new();
@@ -48,6 +49,7 @@ public sealed class JwtTokenService : IJwtTokenService
             new(JwtRegisteredClaimNames.Sub, user.Id),
             new(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
             new(JwtRegisteredClaimNames.UniqueName, user.UserName ?? user.Email ?? user.Id),
+            new(UserNameClaimType, user.UserName ?? user.Email ?? user.Id),
             new(JwtRegisteredClaimNames.Email, user.Email ?? ""),
             new("email_verified", user.EmailConfirmed ? "true" : "false", ClaimValueTypes.Boolean)
         };

@@ -543,12 +543,12 @@ Aggregator (`Platform.Aggregator/Security`) отримує токен Client Cre
 ### 9.4. Частина 3. Keycloak + Pulumi
 Keycloak розгортається траєкторією Б: `builder.AddKeycloak("keycloak", 8080, ...)` з data volume; сервіси підключають `AddKeycloakJwtBearer("keycloak", "DevRealmDrivers", ...)` (Aspire.Keycloak.Authentication). Aspire 13 віддає Keycloak лише по HTTPS: `https://localhost:8080`.
 
-Pulumi C# (`infra/keycloak`, провайдер `Pulumi.Keycloak` 6.15.0) створює 82 ресурси:
+Pulumi C# (`infra/keycloak`, провайдер `Pulumi.Keycloak` 6.15.0) створює 85 ресурсів:
 - realm `DevRealmDrivers`;
 - resource servers `orders-api`, `products-api`, `payments-api` (Authorization увімкнено, `ENFORCING`, `AFFIRMATIVE`): authorization scopes, resource, client roles з тими самими назвами, role policy на кожну роль, scope permission на кожен дозвіл;
 - realm roles `admin`, `manager`, `user`, `guest` — composite з клієнтських ролей за матрицею (`PermissionMatrix.cs`);
 - client scopes `orders_mgmt`, `products_mgmt`, `payments_mgmt` з audience mapper і mapper claim `permissions`;
-- clients `postman` (Auth Code + password grant), `swagger` (public, PKCE S256), `aggregator-service` (Client Credentials, service account з `orders:read`, `products:read`); default scopes — в одному циклі для всіх клієнтів;
+- clients через factory pattern (`KeycloakClientFactory`): `postman` (Authorization Code + password grant для тестів), `swagger` (public, PKCE S256), `aggregator-service` (Client Credentials, service account з `orders:read`, `products:read`), а також resource servers; default scopes, audience mapper і mapper `permissions` — extension methods у `KeycloakClientExtensions` (`WithDefaultScopes`, `WithAudienceMapper`, `WithPermissionsMapper`);
 - users `alice` (admin), `bob` (manager), `carol` (user), `dave` (guest) — тимчасовий пароль, підтверджений email.
 
 ```
@@ -592,7 +592,7 @@ pulumi destroy --yes       # очищення після демонстраці�
 - У `Orders.Api`, `Catalog.Api`, `Payments.Api` папка `Authorization/`: `Permissions`, `PermissionRequirement`, `PermissionAuthorizationHandler`, `RequirePermissionAttribute`, `PermissionGrants`. Політика на кожен дозвіл реєструється в `Program.cs`, `[RequirePermission(...)]` стоїть на кожному endpoint.
 - `PermissionGrants` збирає дозволи залежно від видавця: Keycloak — `authorization.permissions[].scopes` (RPT), claim `permissions` і `resource_access.{client}.roles`; IdentityServer — scopes (`orders.read` → `orders:read`, `orders.write` → create/update/delete/approve ...); Auth Service — ролі (`Admin` — усе, `User` — `orders:read`, `orders:create`, `products:read`). Відмова логується з переліком наявних дозволів.
 - Claims у бізнес-логіці: користувач Auth Service з claim `customer_id` бачить і створює лише замовлення свого клієнта (`CustomerAccess`).
-- Gateway (варіант А): валідує токени, `AuthorizationPolicy` у маршрутах YARP, transform `X-User-Id`, логування 401/403.
+- Gateway (варіант А): валідує токени, `AuthorizationPolicy` у маршрутах YARP, transform `X-User-Id`, логування 401/403; `Platform.ApiGateway/Dockerfile` (збірка з кореня: `docker build -f Platform.ApiGateway/Dockerfile .`).
 - `Payments.Api` — заглушка (in-memory) з трьома операціями.
 
 ### 9.6. Перевірка

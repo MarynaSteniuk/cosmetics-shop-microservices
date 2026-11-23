@@ -13,7 +13,12 @@
 | Клієнти | `postman` (confidential, Auth Code + password grant), `swagger` (public, PKCE S256), `aggregator-service` (Client Credentials) |
 | Користувачі (тимчасовий пароль) | `alice` (admin), `bob` (manager), `carol` (user), `dave` (guest) |
 
-Матриця доступу — у `PermissionMatrix.cs`.
+Файли:
+- `Program.cs` — realm, resource servers, ролі, policies/permissions, client scopes, users, outputs;
+- `PermissionMatrix.cs` — матриця доступу (таблиці 3.3.1–3.3.3), ролі й тестові користувачі;
+- `KeycloakClientFactory.cs` — factory pattern для clients: resource server, Authorization Code, PKCE, Client Credentials;
+- `KeycloakClientExtensions.cs` — extension methods: `WithDefaultScopes`, `WithAudienceMapper`, `WithPermissionsMapper`;
+- `ResourceServer.cs` — створені ресурси одного resource server.
 
 ## Запуск
 
